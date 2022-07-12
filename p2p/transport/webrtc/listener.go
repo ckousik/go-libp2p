@@ -139,9 +139,6 @@ func (l *listener) Multiaddr() ma.Multiaddr {
 }
 
 func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
-	// get remote fingerprint
-	// remoteFp := maFingerprintToSdp(addr.fingerprint)
-	// local fingerprint
 	localFingerprint := strings.ReplaceAll(l.localFingerprint.Value, ":", "")
 
 	se := webrtc.SettingEngine{}
@@ -178,12 +175,12 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 	dcChan := make(chan *DataChannel)
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		// assert that the label of the first DataChannel is "data"
-		// TODO: Make const and move into spec
-		if dc.Label() != "data" {
-			// warn closing data channel
-			dc.Close()
-			return
-		}
+		// NOTE: Is enforcing the first datachannel name necessary?
+		// if dc.Label() != "data" {
+		// 	// warn closing data channel
+		// 	dc.Close()
+		// 	return
+		// }
 
 		dc.OnOpen(func() {
 			detached, err := dc.Detach()
@@ -211,9 +208,11 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 			_ = pc.Close()
 			return nil, fmt.Errorf("should be unreachable")
 		}
-		// clear to allow opening of future data channels
+		// clear to ignore opening of future data channels
+		// until noise handshake is complete
 		pc.OnDataChannel(func(*webrtc.DataChannel) {})
 	}
+
 	// perform noise handshake
 	noiseTpt, err := noise.New(l.privKey)
 	if err != nil {
