@@ -275,7 +275,7 @@ func (t *WebRTCTransport) Dial(
 		return nil, ErrNoiseHandshakeTimeout
 	}
 
-	scope, err := t.rcmgr.OpenConnection(network.DirOutbound, false)
+	scope, err := t.rcmgr.OpenConnection(network.DirOutbound, false, remoteMultiaddr)
 	if err != nil {
 		_ = pc.Close()
 		return nil, err
