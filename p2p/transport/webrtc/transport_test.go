@@ -66,6 +66,7 @@ func TestTransportCanListen(t *testing.T) {
 
 	conn, err := listener.Accept()
 	require.NoError(t, err)
+	require.NotNil(t, conn)
 
 	require.Equal(t, connectingPeer, conn.RemotePeer())
 }

@@ -7,9 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	ic "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -145,11 +145,17 @@ func (t *WebRTCTransport) Dial(
 		log.Debugf("could not get local fingerprint: %v", err)
 		return nil, err
 	}
-	localFingerprintStr := strings.ReplaceAll(localFingerprint.Value, ":", "")
+
+	// @mxinden instead of encoding the local fingerprint we
+	// instead generate a random uuid as the connection ufrag.
+	// The only requirement here is that the ufrag and password
+	// must be equal, which will allow the server to determine
+	// the password using the STUN message.
+	ufrag := uuid.New().String()
 
 	se := webrtc.SettingEngine{}
 	se.DetachDataChannels()
-	se.SetICECredentials(localFingerprintStr, localFingerprintStr)
+	se.SetICECredentials(ufrag, ufrag)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
 
 	pc, err := api.NewPeerConnection(t.webrtcConfig)
@@ -207,7 +213,7 @@ func (t *WebRTCTransport) Dial(
 	answerSdpString := renderServerSdp(sdpArgs{
 		Addr:        raddr,
 		Fingerprint: remoteMultihash,
-		Ufrag:       localFingerprintStr,
+		Ufrag:       ufrag,
 		Password:    hex.EncodeToString(remoteMultihash.Digest),
 	})
 
