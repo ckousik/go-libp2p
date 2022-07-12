@@ -1,14 +1,27 @@
 package libp2pwebrtc
 
 import (
-	ma "github.com/multiformats/go-multiaddr"
-	manet "github.com/multiformats/go-multiaddr/net"
-	"fmt"
 	"encoding/hex"
-	"net"
-	"strconv"
 	"strings"
+
+	ma "github.com/multiformats/go-multiaddr"
+	"github.com/pion/webrtc/v3"
+
+	"github.com/multiformats/go-multibase"
+	mh "github.com/multiformats/go-multihash"
 )
+
+var mhToSdpHash = map[string]string{
+	"sha1":     "sha1",
+	"sha2-256": "sha-256",
+	"md5":      "md5",
+}
+
+var sdpHashToMh = map[string]string{
+	"sha-256": "sha2-256",
+	"sha1":    "sha1",
+	"md5":     "md5",
+}
 
 func maFingerprintToSdp(fp string) string {
 	result := ""
@@ -23,38 +36,42 @@ func maFingerprintToSdp(fp string) string {
 		}
 		result += string(char)
 	}
-	return strings.ToUpper(result)
+	return result
 }
 
-func maToAddrFingerprint(addr ma.Multiaddr) (*net.UDPAddr, string, error) {
-	ip, err := manet.ToIP(addr)
-	if err != nil {
-		return nil, "", err
+func fingerprintSDP(fp *mh.DecodedMultihash) string {
+	if fp == nil {
+		return ""
 	}
-	portS, err := addr.ValueForProtocol(ma.P_UDP)
-	if err != nil {
-		return nil, "", err
+	fpDigest := maFingerprintToSdp(hex.EncodeToString(fp.Digest))
+	fpAlgo, ok := mhToSdpHash[strings.ToLower(fp.Name)]
+	if !ok {
+		fpAlgo = strings.ToLower(fp.Name)
 	}
-	port, err := strconv.Atoi(portS)
-	if err != nil {
-		return nil, "", err
-	}
-
-	result := &net.UDPAddr{ IP: ip, Port: port }
-
-	remoteFp, err := addr.ValueForProtocol(P_XWEBRTC)
-	if err != nil {
-		return nil, "", err
-	}
-	remoteFp = maFingerprintToSdp(remoteFp)
-
-	return result, remoteFp, nil
+	return fpAlgo + " " + fpDigest
 }
 
-func validateFingerprint(fp string) error {
-	b, err := hex.DecodeString(fp)
-	if err != nil || len(b) != 32 {
-		return fmt.Errorf("invalid fingerprint")
+func decodeRemoteFingerprint(maddr ma.Multiaddr) (*mh.DecodedMultihash, error) {
+	remoteFingerprintMultibase, err := maddr.ValueForProtocol(ma.P_CERTHASH)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	_, data, err := multibase.Decode(remoteFingerprintMultibase)
+	if err != nil {
+		return nil, err
+	}
+	return mh.Decode(data)
+}
+
+func encodeDTLSFingerprint(fp webrtc.DTLSFingerprint) (string, error) {
+	digest, err := hex.DecodeString(strings.ReplaceAll(fp.Value, ":", ""))
+	if err != nil {
+		return "", err
+	}
+	algo, ok := sdpHashToMh[strings.ToLower(fp.Algorithm)]
+	if !ok {
+		algo = fp.Algorithm
+	}
+	encoded, err := mh.EncodeName(digest, algo)
+	return multibase.Encode(multibase.Base16, encoded)
 }

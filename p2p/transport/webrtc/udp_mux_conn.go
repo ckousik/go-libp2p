@@ -244,4 +244,3 @@ func decodeUDPAddr(buf []byte) (*net.UDPAddr, error) {
 
 	return &addr, nil
 }
-
