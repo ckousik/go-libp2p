@@ -3,13 +3,15 @@ package libp2pwebrtc
 import (
 	"fmt"
 	"net"
+
+	"github.com/multiformats/go-multihash"
 )
 
 type sdpArgs struct {
-	Addr *net.UDPAddr
-	Ufrag string
-	Password string
-	Fingerprint string
+	Addr        *net.UDPAddr
+	Ufrag       string
+	Password    string
+	Fingerprint *multihash.DecodedMultihash
 }
 
 const CLIENT_SDP string = `
@@ -23,7 +25,7 @@ a=mid:0
 a=ice-options:ice2
 a=ice-ufrag:%s
 a=ice-pwd:%s
-a=fingerprint:sha-256 %s
+a=fingerprint:%s
 a=setup:actpass
 a=sctp-port:5000
 a=max-message-size:100000
@@ -43,11 +45,11 @@ func renderClientSdp(args sdpArgs) string {
 		args.Addr.Port,
 		args.Ufrag,
 		args.Password,
-		args.Fingerprint,
+		fingerprintSDP(args.Fingerprint),
 	)
 }
 
-const SERVER_SDP string =`
+const SERVER_SDP string = `
 v=0
 o=- 0 0 IN %s %s
 s=-
@@ -59,7 +61,7 @@ a=mid:0
 a=ice-options:ice2
 a=ice-ufrag:%s
 a=ice-pwd:%s
-a=fingerprint:sha-256 %s
+a=fingerprint:%s
 a=setup:passive
 a=sctp-port:5000
 a=max-message-size:100000
@@ -71,6 +73,7 @@ func renderServerSdp(args sdpArgs) string {
 	if args.Addr.IP.To4() == nil {
 		ipVersion = "IP6"
 	}
+	fp := fingerprintSDP(args.Fingerprint)
 	return fmt.Sprintf(
 		SERVER_SDP,
 		ipVersion,
@@ -80,7 +83,7 @@ func renderServerSdp(args sdpArgs) string {
 		args.Addr.IP,
 		args.Ufrag,
 		args.Password,
-		args.Fingerprint,
+		fp,
 		args.Addr.IP,
 		args.Addr.Port,
 	)
