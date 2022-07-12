@@ -264,7 +264,7 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 		_ = pc.Close()
 		return nil, err
 	}
-	scope, err := l.transport.rcmgr.OpenConnection(network.DirInbound, false)
+	scope, err := l.transport.rcmgr.OpenConnection(network.DirInbound, false, remoteMultiaddr)
 	if err != nil {
 		_ = pc.Close()
 		return nil, err
