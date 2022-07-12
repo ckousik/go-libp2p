@@ -158,7 +158,13 @@ func (t *WebRTCTransport) Dial(
 		return nil, err
 	}
 
-	dc, err := pc.CreateDataChannel("data", nil)
+	// We need to set negotiated = true for this channel on both
+	// the client and server to avoid DCEP errors.
+	dc, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
+		Negotiated: func(v bool) *bool { return &v }(true),
+		ID:         func(v uint16) *uint16 { return &v }(1),
+	})
+
 	if err != nil {
 		_ = pc.Close()
 		log.Debugf("could not create datachannel: %v", err)
