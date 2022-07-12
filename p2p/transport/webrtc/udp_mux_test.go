@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"testing"
 	"time"
-	"strings"
 
-	// ma "github.com/multiformats/go-multiaddr"
 	"github.com/pion/ice/v2"
 	"github.com/pion/logging"
 	"github.com/pion/stun"
@@ -30,7 +29,7 @@ func TestUdpMuxNewAddrNewStun(t *testing.T) {
 	newAddrChan := make(chan candidateAddr, 1)
 	_ = NewUDPMuxNewAddr(ice.UDPMuxParams{UDPConn: serverConn, Logger: logger}, newAddrChan)
 
-	certhash := "496612170D1C91AE574CC636DDD597D27D62C99A7FB9A3F47003E7439173235E" 
+	certhash := "496612170D1C91AE574CC636DDD597D27D62C99A7FB9A3F47003E7439173235E"
 	go func() {
 		<-time.After(1 * time.Second)
 		msg := stun.MustBuild(
@@ -48,12 +47,10 @@ func TestUdpMuxNewAddrNewStun(t *testing.T) {
 
 	select {
 	case addr := <-newAddrChan:
-		t.Logf("%v", addr)
 		hash := addr.fingerprint
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("received hash: %v", hash)
 		if strings.ToLower(hash) != strings.ToLower(certhash) {
 			t.Fatalf("expected hash: %s, received: %s", certhash, hash)
 		}

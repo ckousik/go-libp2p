@@ -82,7 +82,6 @@ func (m *UDPMuxNewAddr) GetConn(ufrag string, isIPv6 bool) (net.PacketConn, erro
 	defer m.mu.Unlock()
 
 	if m.IsClosed() {
-		m.params.Logger.Debugf("conn closed: %s", ufrag)
 		return nil, io.ErrClosedPipe
 	}
 
@@ -94,7 +93,6 @@ func (m *UDPMuxNewAddr) GetConn(ufrag string, isIPv6 bool) (net.PacketConn, erro
 	go func() {
 		<-c.CloseChannel()
 		m.removeConn(ufrag)
-		m.params.Logger.Debugf("removing connection: %s", ufrag)
 	}()
 
 	if isIPv6 {
@@ -276,11 +274,6 @@ func (m *UDPMuxNewAddr) connWorker() {
 			ufrag, ufragErr := ufragFromStunMessage(msg, false)
 			if ufragErr != nil {
 				m.params.Logger.Warnf("%v", ufragErr)
-				continue
-			}
-
-			if err = validateFingerprint(ufrag); err != nil {
-				m.params.Logger.Debugf("invalid DTLS fingerprint: %s , dropping packet", ufrag)
 				continue
 			}
 
