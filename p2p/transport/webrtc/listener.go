@@ -173,28 +173,23 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 
 	// await openening of datachannel
 	dcChan := make(chan *DataChannel)
-	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
-		// assert that the label of the first DataChannel is "data"
-		// NOTE: Is enforcing the first datachannel name necessary?
-		// if dc.Label() != "data" {
-		// 	// warn closing data channel
-		// 	dc.Close()
-		// 	return
-		// }
-
-		dc.OnOpen(func() {
-			detached, err := dc.Detach()
-			if err != nil {
-				return
-			}
-			dcChan <- newDataChannel(
-				detached,
-				pc,
-				l.mux.LocalAddr(),
-				addr.raddr,
-			)
-		})
-
+	// this enforces that the correct data channel label is used
+	// for the handshake
+	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
+		Negotiated: func(v bool) *bool { return &v }(true),
+		ID:         func(v uint16) *uint16 { return &v }(1),
+	})
+	handshakeChannel.OnOpen(func() {
+		detached, err := handshakeChannel.Detach()
+		if err != nil {
+			return
+		}
+		dcChan <- newDataChannel(
+			detached,
+			pc,
+			l.mux.LocalAddr(),
+			addr.raddr,
+		)
 	})
 
 	timeout := 10 * time.Second
