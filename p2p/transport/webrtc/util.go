@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/pion/webrtc/v3"
-
 	"github.com/multiformats/go-multibase"
 	mh "github.com/multiformats/go-multihash"
+	"github.com/pion/webrtc/v3"
 )
 
 var mhToSdpHash = map[string]string{

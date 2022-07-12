@@ -129,8 +129,6 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 	case r := <-result:
 		return r.MuxedStream, r.error
 	}
-	// should be unreachable
-	return nil, nil
 }
 
 func (c *connection) AcceptStream() (network.MuxedStream, error) {
