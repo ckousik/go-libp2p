@@ -47,7 +47,7 @@ func TestUdpMuxNewAddrNewStun(t *testing.T) {
 
 	select {
 	case addr := <-newAddrChan:
-		hash := addr.fingerprint
+		hash := addr.ufrag
 		if err != nil {
 			t.Fatal(err)
 		}

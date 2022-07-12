@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -101,9 +102,12 @@ func (l *listener) startAcceptLoop() {
 			return
 		case addr := <-l.mux.newAddrChan:
 			go func() {
-				conn, err := l.accept(addr)
+				ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancelFunc()
+				conn, err := l.accept(ctx, addr)
 				if err != nil {
 					log.Debugf("could not accept connection: %v", err)
+					return
 				}
 				l.connChan <- conn
 			}()
@@ -138,14 +142,16 @@ func (l *listener) Multiaddr() ma.Multiaddr {
 	return l.localMultiaddr
 }
 
-func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
+func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableConn, error) {
 	localFingerprint := strings.ReplaceAll(l.localFingerprint.Value, ":", "")
+	// signaling channel
+	signalChan := make(chan struct{})
 
 	se := webrtc.SettingEngine{}
 	se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	se.DetachDataChannels()
 	se.DisableCertificateFingerprintVerification(true)
-	se.SetICECredentials(addr.fingerprint, localFingerprint)
+	se.SetICECredentials(addr.ufrag, localFingerprint)
 	se.SetLite(true)
 	se.SetICEUDPMux(l.mux)
 
@@ -154,14 +160,22 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 	clientSdpString := renderClientSdp(sdpArgs{
 		Addr:        addr.raddr,
 		Fingerprint: defaultMultihash,
-		Ufrag:       addr.fingerprint,
-		Password:    addr.fingerprint,
+		Ufrag:       addr.ufrag,
+		Password:    addr.ufrag,
 	})
 	clientSdp := webrtc.SessionDescription{SDP: clientSdpString, Type: webrtc.SDPTypeOffer}
 	pc, err := api.NewPeerConnection(l.config)
 	if err != nil {
 		return nil, err
 	}
+
+	var connectedOnce sync.Once
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateConnected {
+			connectedOnce.Do(func() { signalChan <- struct{}{} })
+		}
+	})
+
 	pc.SetRemoteDescription(clientSdp)
 
 	answer, err := pc.CreateAnswer(nil)
@@ -170,6 +184,13 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 		return nil, err
 	}
 	pc.SetLocalDescription(answer)
+
+	// await peerconnection connected state
+	select {
+	case <-signalChan:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 
 	// await openening of datachannel
 	dcChan := make(chan *DataChannel)
@@ -228,7 +249,7 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 
 	// Ordinarily, we would do this with a ReadDeadline, but since the underlying datachannel.ReadWriteCloser
 	// does not allow us to set ReadDeadline, we have to manually spawn a goroutine
-	done := make(chan error, 1)
+	done := make(chan error)
 	go func() {
 		buf := make([]byte, 200)
 		n, err := secureConn.Read(buf)
@@ -248,7 +269,7 @@ func (l *listener) accept(addr candidateAddr) (tpt.CapableConn, error) {
 			_ = pc.Close()
 			return nil, err
 		}
-	case <-time.After(10 * time.Second):
+	case <-ctx.Done():
 		_ = pc.Close()
 		return nil, ErrNoiseHandshakeTimeout
 	}
