@@ -14,8 +14,8 @@ import (
 )
 
 type candidateAddr struct {
-	raddr       *net.UDPAddr
-	fingerprint string
+	raddr *net.UDPAddr
+	ufrag string
 }
 
 // UDPMuxNewAddr is an implementation of the interface
@@ -285,7 +285,7 @@ func (m *UDPMuxNewAddr) connWorker() {
 
 			// notify that a new connection is requested
 			if !ok {
-				m.newAddrChan <- candidateAddr{raddr: udpAddr, fingerprint: ufrag}
+				m.newAddrChan <- candidateAddr{raddr: udpAddr, ufrag: ufrag}
 				m.mu.Lock()
 				m.newAddrs[udpAddr] = struct{}{}
 				m.mu.Unlock()
