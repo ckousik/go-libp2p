@@ -28,8 +28,12 @@ type connection struct {
 	remoteKey       ic.PubKey
 	remoteMultiaddr ma.Multiaddr
 
-	closed chan struct{}
+	streams []network.MuxedStream
+
 	accept chan network.MuxedStream
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func newConnection(
@@ -47,18 +51,9 @@ func newConnection(
 ) (*connection, error) {
 	accept := make(chan network.MuxedStream, 1)
 
-	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
-		dc.OnOpen(func() {
-			dcrwc, err := dc.Detach()
-			if err != nil {
-				// cannot accept a non-detached datachannel
-				return
-			}
-			accept <- newDataChannel(dcrwc, pc, nil, nil)
-		})
-	})
+	ctx, cancel := context.WithCancel(context.Background())
 
-	return &connection{
+	conn := &connection{
 		pc:        pc,
 		transport: transport,
 		scope:     scope,
@@ -70,28 +65,47 @@ func newConnection(
 		remotePeer:      remotePeer,
 		remoteKey:       remoteKey,
 		remoteMultiaddr: remoteMultiaddr,
+		ctx:             ctx,
+		cancel:          cancel,
+		streams:         []network.MuxedStream{},
 
-		closed: make(chan struct{}, 1),
 		accept: accept,
-	}, nil
+	}
+
+	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+		dc.OnOpen(func() {
+			dcrwc, err := dc.Detach()
+			if err != nil {
+				// cannot accept a non-detached datachannel
+				return
+			}
+
+			stream := newDataChannel(dcrwc, pc, nil, nil)
+			conn.streams = append(conn.streams, stream)
+			accept <- stream
+		})
+	})
+	return conn, nil
 }
 
 // Implement network.MuxedConn
 
 func (c *connection) Close() error {
+	// cleanup routine
+	go func() {
+		for _, stream := range c.streams {
+			_ = stream.Close()
+		}
+	}()
 	_ = c.pc.Close()
 	c.scope.Done()
-	select {
-	case <-c.closed:
-	default:
-		close(c.closed)
-	}
+	c.cancel()
 	return nil
 }
 
 func (c *connection) IsClosed() bool {
 	select {
-	case <-c.closed:
+	case <-c.ctx.Done():
 		return true
 	default:
 	}
@@ -129,13 +143,14 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		_ = dc.Close()
 		return nil, ctx.Err()
 	case r := <-result:
+		c.streams = append(c.streams, r.MuxedStream)
 		return r.MuxedStream, r.error
 	}
 }
 
 func (c *connection) AcceptStream() (network.MuxedStream, error) {
 	select {
-	case <-c.closed:
+	case <-c.ctx.Done():
 		return nil, os.ErrClosed
 	case stream := <-c.accept:
 		return stream, nil
