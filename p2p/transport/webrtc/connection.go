@@ -91,15 +91,19 @@ func newConnection(
 // Implement network.MuxedConn
 
 func (c *connection) Close() error {
+	if c.IsClosed() {
+		return nil
+	}
+
+	_ = c.pc.Close()
+	c.scope.Done()
+	c.cancel()
 	// cleanup routine
 	go func() {
 		for _, stream := range c.streams {
 			_ = stream.Close()
 		}
 	}()
-	_ = c.pc.Close()
-	c.scope.Done()
-	c.cancel()
 	return nil
 }
 
@@ -113,6 +117,10 @@ func (c *connection) IsClosed() bool {
 }
 
 func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error) {
+	if c.IsClosed() {
+		return nil, os.ErrClosed
+	}
+
 	label := uuid.New().String()
 	dc, err := c.pc.CreateDataChannel(label, nil)
 	if err != nil {
@@ -132,10 +140,12 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 			return
 		}
 
+		stream := newDataChannel(rwc, c.pc, nil, nil)
+		c.streams = append(c.streams, stream)
 		result <- struct {
 			network.MuxedStream
 			error
-		}{newDataChannel(rwc, c.pc, nil, nil), err}
+		}{stream, err}
 	})
 
 	select {
@@ -143,7 +153,6 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		_ = dc.Close()
 		return nil, ctx.Err()
 	case r := <-result:
-		c.streams = append(c.streams, r.MuxedStream)
 		return r.MuxedStream, r.error
 	}
 }
