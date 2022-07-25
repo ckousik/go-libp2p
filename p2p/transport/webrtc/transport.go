@@ -7,12 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"time"
 
 	"github.com/google/uuid"
 	ic "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/sec"
 	tpt "github.com/libp2p/go-libp2p-core/transport"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 
@@ -32,25 +32,30 @@ type WebRTCTransport struct {
 	webrtcConfig webrtc.Configuration
 	rcmgr        network.ResourceManager
 	privKey      ic.PrivKey
+	noiseTpt     *noise.Transport
 }
+
+var _ tpt.Transport = &WebRTCTransport{}
 
 type Option func(*WebRTCTransport) error
 
 func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*WebRTCTransport, error) {
 	pk, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		log.Debugf("could not generate rsa key for cert: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("could not generate rsa key for cert: %v", err)
 	}
 	cert, err := webrtc.GenerateCertificate(pk)
 	if err != nil {
-		log.Debugf("could not generate certificate: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("could not generate certificate: %v", err)
 	}
 	config := webrtc.Configuration{
 		Certificates: []webrtc.Certificate{*cert},
 	}
-	return &WebRTCTransport{rcmgr: rcmgr, webrtcConfig: config, privKey: privKey}, nil
+	noiseTpt, err := noise.New(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create the noise transport")
+	}
+	return &WebRTCTransport{rcmgr: rcmgr, webrtcConfig: config, privKey: privKey, noiseTpt: noiseTpt}, nil
 }
 
 func (t *WebRTCTransport) Protocols() []int {
@@ -68,17 +73,16 @@ func (t *WebRTCTransport) CanDial(addr ma.Multiaddr) bool {
 func (t *WebRTCTransport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
 	nw, host, err := manet.DialArgs(addr)
 	if err != nil {
-		log.Debugf("listener could not fetch dialargs: %v", err)
+		return nil, fmt.Errorf("listener could not fetch dialargs: %v", err)
 	}
 	udpAddr, err := net.ResolveUDPAddr(nw, host)
 	if err != nil {
-		log.Debugf("listener could not resolve udp address: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("listener could not resolve udp address: %v", err)
 	}
 
 	socket, err := net.ListenUDP(nw, udpAddr)
 	if err != nil {
-		log.Debugf("could not listen on udp: %v", err)
+		return nil, fmt.Errorf("could not listen on udp: %v", err)
 	}
 
 	// construct multiaddr
@@ -112,7 +116,6 @@ func (t *WebRTCTransport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
 		t,
 		listenerMultiaddr,
 		socket,
-		t.privKey,
 		t.webrtcConfig,
 	)
 }
@@ -122,31 +125,48 @@ func (t *WebRTCTransport) Dial(
 	remoteMultiaddr ma.Multiaddr,
 	p peer.ID,
 ) (tpt.CapableConn, error) {
+	var pc *webrtc.PeerConnection
+	scope, err := t.rcmgr.OpenConnection(network.DirOutbound, false, remoteMultiaddr)
+
+	cleanup := func() {
+		if pc != nil {
+			_ = pc.Close()
+		}
+		if scope != nil {
+			scope.Done()
+		}
+	}
+
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
+	err = scope.SetPeer(p)
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
 	remoteMultihash, err := decodeRemoteFingerprint(remoteMultiaddr)
 	if err != nil {
-		log.Debugf("could not decode remote multiaddr: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not decode remote multiaddr: %v", err)
 	}
 
 	rnw, rhost, err := manet.DialArgs(remoteMultiaddr)
 	if err != nil {
-		log.Debugf("could not generate dialargs: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not generate dialargs: %v", err)
 	}
 
 	raddr, err := net.ResolveUDPAddr(rnw, rhost)
 	if err != nil {
-		log.Debugf("could not resolve udp address: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not resolve udp address: %v", err)
 	}
 
-	localFingerprint, err := t.getCertificateFingerprint()
-	if err != nil {
-		log.Debugf("could not get local fingerprint: %v", err)
-		return nil, err
-	}
-
-	// @mxinden instead of encoding the local fingerprint we
+	// Instead of encoding the local fingerprint we
 	// instead generate a random uuid as the connection ufrag.
 	// The only requirement here is that the ufrag and password
 	// must be equal, which will allow the server to determine
@@ -158,10 +178,10 @@ func (t *WebRTCTransport) Dial(
 	se.SetICECredentials(ufrag, ufrag)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
 
-	pc, err := api.NewPeerConnection(t.webrtcConfig)
+	pc, err = api.NewPeerConnection(t.webrtcConfig)
 	if err != nil {
-		log.Debugf("could not instantiate peerconnection: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not instantiate peerconnection: %v", err)
 	}
 
 	// We need to set negotiated = true for this channel on both
@@ -172,22 +192,22 @@ func (t *WebRTCTransport) Dial(
 	})
 
 	if err != nil {
-		_ = pc.Close()
-		log.Debugf("could not create datachannel: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not create datachannel: %v", err)
 	}
 
-	opened := make(chan *DataChannel, 1)
+	opened := make(chan *dataChannel, 1)
 	errChan := make(chan error, 1)
 	dc.OnOpen(func() {
 		detached, err := dc.Detach()
 		if err != nil {
-			log.Debugf("could not detach datachannel: %v", err)
+			err = fmt.Errorf("could not detach datachannel: %v", err)
 			errChan <- err
+			return
 		}
 		cp, err := dc.Transport().Transport().ICETransport().GetSelectedCandidatePair()
-		if err != nil {
-			log.Debugf("could not fetch selected candidate pair: %v", err)
+		if cp == nil || err != nil {
+			err = fmt.Errorf("could not fetch selected candidate pair: %v", err)
 			errChan <- err
 			return
 		}
@@ -198,16 +218,14 @@ func (t *WebRTCTransport) Dial(
 
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
-		_ = pc.Close()
-		log.Debugf("could not create offer: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not create offer: %v", err)
 	}
 
 	err = pc.SetLocalDescription(offer)
 	if err != nil {
-		_ = pc.Close()
-		log.Debugf("could not set local description: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not set local description: %v", err)
 	}
 
 	answerSdpString := renderServerSdp(sdpArgs{
@@ -220,47 +238,86 @@ func (t *WebRTCTransport) Dial(
 	answer := webrtc.SessionDescription{SDP: answerSdpString, Type: webrtc.SDPTypeAnswer}
 	err = pc.SetRemoteDescription(answer)
 	if err != nil {
-		_ = pc.Close()
-		log.Debugf("could not set remote description: %v", err)
-		return nil, err
+		defer cleanup()
+		return nil, fmt.Errorf("could not set remote description: %v", err)
 	}
 
-	var dataChannel *DataChannel = nil
+	var dataChannel *dataChannel = nil
 	select {
 	case dataChannel = <-opened:
 	case err = <-errChan:
-		_ = pc.Close()
+		defer cleanup()
 		return nil, err
 	case <-ctx.Done():
-		_ = pc.Close()
+		scope.Done()
+		defer cleanup()
 		return nil, ErrDataChannelTimeout
 	}
 
-	// create noise transport for auth
-	noiseTpt, err := noise.New(t.privKey)
+	secureConn, err := t.noiseHandshake(ctx, pc, dataChannel, p, false)
 	if err != nil {
-		log.Debugf("could not create noise transport: %v", err)
+		defer cleanup()
 		return nil, err
 	}
 
-	mb, err := encodeDTLSFingerprint(localFingerprint)
+	localAddr, err := manet.FromNetAddr(dataChannel.LocalAddr())
 	if err != nil {
-		log.Debugf("could not encode local fingerprint: %v", err)
+		defer cleanup()
 		return nil, err
 	}
-	secureConn, err := noiseTpt.SecureOutbound(context.Background(), dataChannel, p)
+	conn, err := newConnection(
+		pc,
+		t,
+		scope,
+		secureConn.LocalPeer(),
+		secureConn.LocalPrivateKey(),
+		localAddr,
+		secureConn.RemotePeer(),
+		secureConn.RemotePublicKey(),
+		remoteMultiaddr,
+	)
 	if err != nil {
-		log.Debugf("could not create secure outbound transport: %v", err)
+		defer cleanup()
 		return nil, err
 	}
 
-	// noise handshake
-	_, err = secureConn.Write([]byte(mb))
+	return conn, nil
+}
+
+func (t *WebRTCTransport) getCertificateFingerprint() (webrtc.DTLSFingerprint, error) {
+	fps, err := t.webrtcConfig.Certificates[0].GetFingerprints()
 	if err != nil {
-		_ = pc.Close()
-		log.Debugf("could not write auth data: %v", err)
-		return nil, err
+		return webrtc.DTLSFingerprint{}, err
 	}
+	return fps[0], nil
+}
+
+func (t *WebRTCTransport) noiseHandshake(ctx context.Context, pc *webrtc.PeerConnection, datachannel *dataChannel, peer peer.ID, inbound bool) (secureConn sec.SecureConn, err error) {
+	if inbound {
+		secureConn, err = t.noiseTpt.SecureInbound(ctx, datachannel, peer)
+		if err != nil {
+			return
+		}
+	} else {
+		secureConn, err = t.noiseTpt.SecureOutbound(ctx, datachannel, peer)
+		if err != nil {
+			return
+		}
+	}
+	localFingerprint, err := t.getCertificateFingerprint()
+	if err != nil {
+		return
+	}
+	encodedMultibase, err := encodeDTLSFingerprint(localFingerprint)
+	if err != nil {
+		return
+	}
+
+	_, err = secureConn.Write([]byte(encodedMultibase))
+	if err != nil {
+		return
+	}
+
 	done := make(chan error, 1)
 	go func() {
 		buf := make([]byte, 2048)
@@ -278,54 +335,11 @@ func (t *WebRTCTransport) Dial(
 	select {
 	case err = <-done:
 		if err != nil {
-			_ = pc.Close()
-			log.Debugf("dialed: read failed: %v", err)
-			return nil, err
+			err = fmt.Errorf("dialed: read failed: %v", err)
+			return
 		}
-	case <-time.After(10 * time.Second):
-		_ = pc.Close()
+	case <-ctx.Done():
 		return nil, ErrNoiseHandshakeTimeout
 	}
-
-	scope, err := t.rcmgr.OpenConnection(network.DirOutbound, false, remoteMultiaddr)
-	if err != nil {
-		_ = pc.Close()
-		return nil, err
-	}
-	err = scope.SetPeer(secureConn.RemotePeer())
-	if err != nil {
-		_ = pc.Close()
-		scope.Done()
-		return nil, err
-	}
-
-	localAddr, err := manet.FromNetAddr(dataChannel.LocalAddr())
-	if err != nil {
-		return nil, err
-	}
-	conn, err := newConnection(
-		pc,
-		t,
-		scope,
-		secureConn.LocalPeer(),
-		secureConn.LocalPrivateKey(),
-		localAddr,
-		secureConn.RemotePeer(),
-		secureConn.RemotePublicKey(),
-		remoteMultiaddr,
-	)
-	if err != nil {
-		_ = pc.Close()
-		return nil, err
-	}
-
-	return conn, nil
-}
-
-func (t *WebRTCTransport) getCertificateFingerprint() (webrtc.DTLSFingerprint, error) {
-	fps, err := t.webrtcConfig.Certificates[0].GetFingerprints()
-	if err != nil {
-		return webrtc.DTLSFingerprint{}, err
-	}
-	return fps[0], nil
+	return secureConn, nil
 }

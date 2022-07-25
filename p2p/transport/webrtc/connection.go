@@ -13,6 +13,8 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
+var _ tpt.CapableConn = &connection{}
+
 type connection struct {
 	pc        *webrtc.PeerConnection
 	transport *WebRTCTransport
@@ -132,13 +134,12 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 }
 
 func (c *connection) AcceptStream() (network.MuxedStream, error) {
-	var stream network.MuxedStream
 	select {
 	case <-c.closed:
 		return nil, os.ErrClosed
-	case stream = <-c.accept:
+	case stream := <-c.accept:
+		return stream, nil
 	}
-	return stream, nil
 }
 
 // implement network.ConnSecurity

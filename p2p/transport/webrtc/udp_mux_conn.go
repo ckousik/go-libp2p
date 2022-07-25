@@ -12,7 +12,7 @@ import (
 )
 
 type udpMuxedConnParams struct {
-	Mux       *UDPMuxNewAddr
+	Mux       *udpMuxNewAddr
 	AddrPool  *sync.Pool
 	Key       string
 	LocalAddr net.Addr

@@ -12,11 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
 
 	tpt "github.com/libp2p/go-libp2p-core/transport"
-	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	ma "github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 	"github.com/multiformats/go-multibase"
@@ -57,16 +55,15 @@ func init() {
 type listener struct {
 	transport                 *WebRTCTransport
 	config                    webrtc.Configuration
-	privKey                   crypto.PrivKey
 	localFingerprint          webrtc.DTLSFingerprint
 	localFingerprintMultibase string
-	mux                       *UDPMuxNewAddr
+	mux                       *udpMuxNewAddr
 	closeChan                 chan struct{}
 	localMultiaddr            ma.Multiaddr
 	connChan                  chan tpt.CapableConn
 }
 
-func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.PacketConn, privKey crypto.PrivKey, config webrtc.Configuration) (*listener, error) {
+func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.PacketConn, config webrtc.Configuration) (*listener, error) {
 	mux := NewUDPMuxNewAddr(ice.UDPMuxParams{UDPConn: socket}, make(chan candidateAddr, 1))
 	localFingerprints, err := config.Certificates[0].GetFingerprints()
 	if err != nil {
@@ -83,7 +80,6 @@ func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.Pack
 	l := &listener{
 		mux:                       mux,
 		transport:                 transport,
-		privKey:                   privKey,
 		config:                    config,
 		localFingerprint:          localFingerprints[0],
 		localFingerprintMultibase: localFpMultibase,
@@ -143,6 +139,31 @@ func (l *listener) Multiaddr() ma.Multiaddr {
 }
 
 func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableConn, error) {
+	var (
+		scope network.ConnManagementScope
+		pc *webrtc.PeerConnection
+	)
+
+	cleanup := func() {
+		if scope != nil {
+			scope.Done()
+		}
+		if pc != nil {
+			_ = pc.Close()
+		}
+	}
+
+	remoteMultiaddr, err := manet.FromNetAddr(addr.raddr)
+	if err != nil {
+		return nil, err
+	}
+
+	scope, err = l.transport.rcmgr.OpenConnection(network.DirInbound, false, remoteMultiaddr)
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
 	localFingerprint := strings.ReplaceAll(l.localFingerprint.Value, ":", "")
 	// signaling channel
 	signalChan := make(chan struct{})
@@ -164,8 +185,9 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		Password:    addr.ufrag,
 	})
 	clientSdp := webrtc.SessionDescription{SDP: clientSdpString, Type: webrtc.SDPTypeOffer}
-	pc, err := api.NewPeerConnection(l.config)
+	pc, err = api.NewPeerConnection(l.config)
 	if err != nil {
+		defer cleanup()
 		return nil, err
 	}
 
@@ -180,7 +202,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 
 	answer, err := pc.CreateAnswer(nil)
 	if err != nil {
-		_ = pc.Close()
+		defer cleanup()
 		return nil, err
 	}
 	pc.SetLocalDescription(answer)
@@ -189,105 +211,61 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	select {
 	case <-signalChan:
 	case <-ctx.Done():
+		defer cleanup()
 		return nil, ctx.Err()
 	}
 
 	// await openening of datachannel
-	dcChan := make(chan *DataChannel)
+	dcChan := make(chan *dataChannel)
 	// this enforces that the correct data channel label is used
 	// for the handshake
 	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
 		Negotiated: func(v bool) *bool { return &v }(true),
 		ID:         func(v uint16) *uint16 { return &v }(1),
 	})
+
+	var handshakeOnce sync.Once
 	handshakeChannel.OnOpen(func() {
-		detached, err := handshakeChannel.Detach()
-		if err != nil {
-			return
-		}
-		dcChan <- newDataChannel(
-			detached,
-			pc,
-			l.mux.LocalAddr(),
-			addr.raddr,
-		)
+		handshakeOnce.Do(func() {
+			detached, err := handshakeChannel.Detach()
+			if err != nil {
+				return
+			}
+			dcChan <- newDataChannel(
+				detached,
+				pc,
+				l.mux.LocalAddr(),
+				addr.raddr,
+			)
+		})
 	})
 
-	timeout := 10 * time.Second
-	var dc *DataChannel = nil
+	var dc *dataChannel
 	select {
-	case <-time.After(timeout):
-		_ = pc.Close()
+	case <-ctx.Done():
+		defer cleanup()
 		return nil, ErrDataChannelTimeout
 	case dc = <-dcChan:
 		if dc == nil {
-			_ = pc.Close()
+			defer cleanup()
 			return nil, fmt.Errorf("should be unreachable")
 		}
 		// clear to ignore opening of future data channels
 		// until noise handshake is complete
-		pc.OnDataChannel(func(*webrtc.DataChannel) {})
+		// pc.OnDataChannel(func(*webrtc.DataChannel) {})
 	}
 
-	// perform noise handshake
-	noiseTpt, err := noise.New(l.privKey)
-	if err != nil {
-		_ = pc.Close()
-		return nil, err
-	}
 	// we do not yet know A's peer ID so accept any inbound
-	secureConn, err := noiseTpt.SecureInbound(context.Background(), dc, "")
+	secureConn, err := l.transport.noiseHandshake(ctx, pc, dc, "", true)
 	if err != nil {
-		_ = pc.Close()
+		defer cleanup()
 		return nil, err
 	}
 
-	_, err = secureConn.Write([]byte(l.localFingerprintMultibase))
-	if err != nil {
-		return nil, err
-	}
-
-	// Ordinarily, we would do this with a ReadDeadline, but since the underlying datachannel.ReadWriteCloser
-	// does not allow us to set ReadDeadline, we have to manually spawn a goroutine
-	done := make(chan error)
-	go func() {
-		buf := make([]byte, 200)
-		n, err := secureConn.Read(buf)
-		if err != nil {
-			done <- err
-		}
-		remoteFpMultibase := string(buf[:n])
-		if !verifyRemoteFingerprint(pc.SCTP().Transport().GetRemoteCertificate(), remoteFpMultibase) {
-			done <- fmt.Errorf("could not verify remote fingerprint")
-		}
-		close(done)
-	}()
-
-	select {
-	case err = <-done:
-		if err != nil {
-			_ = pc.Close()
-			return nil, err
-		}
-	case <-ctx.Done():
-		_ = pc.Close()
-		return nil, ErrNoiseHandshakeTimeout
-	}
-
-	remoteMultiaddr, err := manet.FromNetAddr(addr.raddr)
-	if err != nil {
-		_ = pc.Close()
-		return nil, err
-	}
-	scope, err := l.transport.rcmgr.OpenConnection(network.DirInbound, false, remoteMultiaddr)
-	if err != nil {
-		_ = pc.Close()
-		return nil, err
-	}
+	// earliest point where we know the remote's peerID
 	err = scope.SetPeer(secureConn.RemotePeer())
 	if err != nil {
-		_ = pc.Close()
-		scope.Done()
+		defer cleanup()
 		return nil, err
 	}
 
@@ -304,7 +282,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	)
 
 	if err != nil {
-		_ = pc.Close()
+		defer cleanup()
 		return nil, err
 	}
 
