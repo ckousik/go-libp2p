@@ -18,8 +18,10 @@ type candidateAddr struct {
 	ufrag string
 }
 
-// UDPMuxNewAddr is an implementation of the interface
-type UDPMuxNewAddr struct {
+var _ ice.UDPMux = &udpMuxNewAddr{}
+
+// udpMuxNewAddr is an implementation of the interface
+type udpMuxNewAddr struct {
 	params ice.UDPMuxParams
 
 	closedChan chan struct{}
@@ -44,12 +46,12 @@ const maxAddrSize = 512
 const receiveMTU = 8192
 
 // NewUDPMuxNewAddr creates an implementation of UDPMux
-func NewUDPMuxNewAddr(params ice.UDPMuxParams, newAddrChan chan candidateAddr) *UDPMuxNewAddr {
+func NewUDPMuxNewAddr(params ice.UDPMuxParams, newAddrChan chan candidateAddr) *udpMuxNewAddr {
 	if params.Logger == nil {
 		params.Logger = logging.NewDefaultLoggerFactory().NewLogger("ice")
 	}
 
-	m := &UDPMuxNewAddr{
+	m := &udpMuxNewAddr{
 		addressMap: map[string]*udpMuxedConn{},
 		params:     params,
 		connsIPv4:  make(map[string]*udpMuxedConn),
@@ -71,13 +73,13 @@ func NewUDPMuxNewAddr(params ice.UDPMuxParams, newAddrChan chan candidateAddr) *
 }
 
 // LocalAddr returns the listening address of this UDPMuxNewAddr
-func (m *UDPMuxNewAddr) LocalAddr() net.Addr {
+func (m *udpMuxNewAddr) LocalAddr() net.Addr {
 	return m.params.UDPConn.LocalAddr()
 }
 
 // GetConn returns a PacketConn given the connection's ufrag and network
 // creates the connection if an existing one can't be found
-func (m *UDPMuxNewAddr) GetConn(ufrag string, isIPv6 bool) (net.PacketConn, error) {
+func (m *udpMuxNewAddr) GetConn(ufrag string, isIPv6 bool) (net.PacketConn, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -105,7 +107,7 @@ func (m *UDPMuxNewAddr) GetConn(ufrag string, isIPv6 bool) (net.PacketConn, erro
 }
 
 // RemoveConnByUfrag stops and removes the muxed packet connection
-func (m *UDPMuxNewAddr) RemoveConnByUfrag(ufrag string) {
+func (m *udpMuxNewAddr) RemoveConnByUfrag(ufrag string) {
 	removedConns := make([]*udpMuxedConn, 0, 2)
 
 	// Keep lock section small to avoid deadlock with conn lock
@@ -132,7 +134,7 @@ func (m *UDPMuxNewAddr) RemoveConnByUfrag(ufrag string) {
 }
 
 // IsClosed returns true if the mux had been closed
-func (m *UDPMuxNewAddr) IsClosed() bool {
+func (m *udpMuxNewAddr) IsClosed() bool {
 	select {
 	case <-m.closedChan:
 		return true
@@ -142,7 +144,7 @@ func (m *UDPMuxNewAddr) IsClosed() bool {
 }
 
 // Close the mux, no further connections could be created
-func (m *UDPMuxNewAddr) Close() error {
+func (m *udpMuxNewAddr) Close() error {
 	var err error
 	m.closeOnce.Do(func() {
 		m.mu.Lock()
@@ -163,7 +165,7 @@ func (m *UDPMuxNewAddr) Close() error {
 	return err
 }
 
-func (m *UDPMuxNewAddr) removeConn(key string) {
+func (m *udpMuxNewAddr) removeConn(key string) {
 	// keep lock section small to avoid deadlock with conn lock
 	c := func() *udpMuxedConn {
 		m.mu.Lock()
@@ -195,11 +197,11 @@ func (m *UDPMuxNewAddr) removeConn(key string) {
 	}
 }
 
-func (m *UDPMuxNewAddr) writeTo(buf []byte, raddr net.Addr) (n int, err error) {
+func (m *udpMuxNewAddr) writeTo(buf []byte, raddr net.Addr) (n int, err error) {
 	return m.params.UDPConn.WriteTo(buf, raddr)
 }
 
-func (m *UDPMuxNewAddr) registerConnForAddress(conn *udpMuxedConn, addr string) {
+func (m *udpMuxNewAddr) registerConnForAddress(conn *udpMuxedConn, addr string) {
 	if m.IsClosed() {
 		return
 	}
@@ -216,7 +218,7 @@ func (m *UDPMuxNewAddr) registerConnForAddress(conn *udpMuxedConn, addr string) 
 	m.params.Logger.Debugf("Registered %s for %s", addr, conn.params.Key)
 }
 
-func (m *UDPMuxNewAddr) createMuxedConn(key string) *udpMuxedConn {
+func (m *udpMuxNewAddr) createMuxedConn(key string) *udpMuxedConn {
 	c := newUDPMuxedConn(&udpMuxedConnParams{
 		Mux:       m,
 		Key:       key,
@@ -227,7 +229,7 @@ func (m *UDPMuxNewAddr) createMuxedConn(key string) *udpMuxedConn {
 	return c
 }
 
-func (m *UDPMuxNewAddr) connWorker() {
+func (m *udpMuxNewAddr) connWorker() {
 	logger := m.params.Logger
 
 	defer func() {
@@ -321,7 +323,7 @@ func ufragFromStunMessage(msg *stun.Message, local_ufrag bool) (string, error) {
 	}
 }
 
-func (m *UDPMuxNewAddr) getConn(ufrag string, isIPv6 bool) (val *udpMuxedConn, ok bool) {
+func (m *udpMuxNewAddr) getConn(ufrag string, isIPv6 bool) (val *udpMuxedConn, ok bool) {
 	if isIPv6 {
 		val, ok = m.connsIPv6[ufrag]
 	} else {

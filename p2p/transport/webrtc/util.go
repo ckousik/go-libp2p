@@ -74,3 +74,4 @@ func encodeDTLSFingerprint(fp webrtc.DTLSFingerprint) (string, error) {
 	encoded, err := mh.EncodeName(digest, algo)
 	return multibase.Encode(multibase.Base16, encoded)
 }
+
