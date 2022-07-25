@@ -7,13 +7,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/pion/datachannel"
 	"github.com/pion/webrtc/v3"
 )
 
+var _ network.MuxedStream = &dataChannel{}
+
 // Package pion detached data channel into a net.Conn
 // and then a network.MuxedStream
-type DataChannel struct {
+type dataChannel struct {
 	// TODO: Are these circular references okay?
 	pc            *webrtc.PeerConnection
 	dc            datachannel.ReadWriteCloser
@@ -29,8 +32,8 @@ type DataChannel struct {
 func newDataChannel(
 	dc datachannel.ReadWriteCloser,
 	pc *webrtc.PeerConnection,
-	laddr, raddr net.Addr) *DataChannel {
-	return &DataChannel{
+	laddr, raddr net.Addr) *dataChannel {
+	return &dataChannel{
 		dc:         dc,
 		laddr:      laddr,
 		raddr:      raddr,
@@ -39,7 +42,7 @@ func newDataChannel(
 	}
 }
 
-func (d *DataChannel) Read(b []byte) (int, error) {
+func (d *dataChannel) Read(b []byte) (int, error) {
 	select {
 	case <-d.closeRead:
 		return 0, io.EOF
@@ -76,7 +79,7 @@ func (d *DataChannel) Read(b []byte) (int, error) {
 	}
 }
 
-func (d *DataChannel) Write(b []byte) (int, error) {
+func (d *dataChannel) Write(b []byte) (int, error) {
 	select {
 	case <-d.closeWrite:
 		return 0, io.ErrClosedPipe
@@ -113,11 +116,11 @@ func (d *DataChannel) Write(b []byte) (int, error) {
 	}
 }
 
-func (d *DataChannel) Close() error {
+func (d *dataChannel) Close() error {
 	return d.dc.Close()
 }
 
-func (d *DataChannel) CloseRead() error {
+func (d *dataChannel) CloseRead() error {
 	select {
 	case <-d.closeRead:
 	default:
@@ -126,7 +129,7 @@ func (d *DataChannel) CloseRead() error {
 	return nil
 }
 
-func (d *DataChannel) CloseWrite() error {
+func (d *dataChannel) CloseWrite() error {
 	select {
 	case <-d.closeWrite:
 	default:
@@ -135,19 +138,19 @@ func (d *DataChannel) CloseWrite() error {
 	return nil
 }
 
-func (d *DataChannel) LocalAddr() net.Addr {
+func (d *dataChannel) LocalAddr() net.Addr {
 	return d.laddr
 }
 
-func (d *DataChannel) RemoteAddr() net.Addr {
+func (d *dataChannel) RemoteAddr() net.Addr {
 	return d.raddr
 }
 
-func (d *DataChannel) Reset() error {
+func (d *dataChannel) Reset() error {
 	return d.Close()
 }
 
-func (d *DataChannel) SetDeadline(t time.Time) error {
+func (d *dataChannel) SetDeadline(t time.Time) error {
 	d.m.Lock()
 	defer d.m.Unlock()
 	d.readDeadline = t
@@ -155,14 +158,14 @@ func (d *DataChannel) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (d *DataChannel) SetReadDeadline(t time.Time) error {
+func (d *dataChannel) SetReadDeadline(t time.Time) error {
 	d.m.Lock()
 	defer d.m.Unlock()
 	d.readDeadline = t
 	return nil
 }
 
-func (d *DataChannel) SetWriteDeadline(t time.Time) error {
+func (d *dataChannel) SetWriteDeadline(t time.Time) error {
 	d.m.Lock()
 	defer d.m.Unlock()
 	d.writeDeadline = t
