@@ -2,8 +2,9 @@ package libp2pwebrtc
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -40,7 +41,7 @@ var _ tpt.Transport = &WebRTCTransport{}
 type Option func(*WebRTCTransport) error
 
 func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*WebRTCTransport, error) {
-	pk, err := rsa.GenerateKey(rand.Reader, 2048)
+	pk, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate rsa key for cert: %v", err)
 	}
