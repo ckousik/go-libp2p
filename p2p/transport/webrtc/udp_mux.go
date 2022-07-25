@@ -1,5 +1,10 @@
 package libp2pwebrtc
 
+// udpMuxNewAddr is mostly similar to UDPMuxDefault exported from
+// pion/ice [https://github.com/pion/ice/blob/master/udp_mux.go] with
+// the only difference being the additional channel to notify the libp2p
+// transport of any STUN requests from unknown ufrags.
+
 import (
 	"errors"
 	"io"
