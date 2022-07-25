@@ -1,5 +1,9 @@
 package libp2pwebrtc
 
+// This file is copied as is from https://github.com/pion/ice/blob/master/udp_muxed_conn.go .
+// The udpMuxedConn struct is not exported from pion/ice and is required for implementing
+// the custom udp muxer.
+
 import (
 	"encoding/binary"
 	"io"

@@ -32,6 +32,10 @@ var (
 )
 
 var (
+	// since verification of the remote fingerprint is deferred until
+	// the noise handshake, a multihash with an arbitrary value is considered
+	// as the remote fingerprint during the intial PeerConnection connection
+	// establishment.
 	defaultMultihash *multihash.DecodedMultihash = nil
 )
 
@@ -58,9 +62,11 @@ type listener struct {
 	localFingerprint          webrtc.DTLSFingerprint
 	localFingerprintMultibase string
 	mux                       *udpMuxNewAddr
-	closeChan                 chan struct{}
+	ctx                       context.Context
+	cancel                    context.CancelFunc
 	localMultiaddr            ma.Multiaddr
 	connChan                  chan tpt.CapableConn
+	wg                        sync.WaitGroup
 }
 
 func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.PacketConn, config webrtc.Configuration) (*listener, error) {
@@ -77,24 +83,32 @@ func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.Pack
 	localMhBuf, _ := multihash.EncodeName(localMh, sdpHashToMh[localFingerprints[0].Algorithm])
 	localFpMultibase, _ := multibase.Encode(multibase.Base64, localMhBuf)
 
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+
 	l := &listener{
 		mux:                       mux,
 		transport:                 transport,
 		config:                    config,
 		localFingerprint:          localFingerprints[0],
 		localFingerprintMultibase: localFpMultibase,
-		closeChan:                 make(chan struct{}, 1),
 		localMultiaddr:            laddr,
+		ctx:                       ctx,
+		cancel:                    cancel,
 		connChan:                  make(chan tpt.CapableConn, 20),
+		wg:                        wg,
 	}
+
+	wg.Add(1)
 	go l.startAcceptLoop()
 	return l, err
 }
 
 func (l *listener) startAcceptLoop() {
+	defer l.wg.Done()
 	for {
 		select {
-		case <-l.closeChan:
+		case <-l.ctx.Done():
 			return
 		case addr := <-l.mux.newAddrChan:
 			go func() {
@@ -113,7 +127,7 @@ func (l *listener) startAcceptLoop() {
 
 func (l *listener) Accept() (tpt.CapableConn, error) {
 	select {
-	case <-l.closeChan:
+	case <-l.ctx.Done():
 		return nil, os.ErrClosed
 	case conn := <-l.connChan:
 		return conn, nil
@@ -121,12 +135,8 @@ func (l *listener) Accept() (tpt.CapableConn, error) {
 }
 
 func (l *listener) Close() error {
-	select {
-	case <-l.closeChan:
-		return nil
-	default:
-	}
-	close(l.closeChan)
+	l.cancel()
+	l.wg.Wait()
 	return nil
 }
 
@@ -141,7 +151,7 @@ func (l *listener) Multiaddr() ma.Multiaddr {
 func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableConn, error) {
 	var (
 		scope network.ConnManagementScope
-		pc *webrtc.PeerConnection
+		pc    *webrtc.PeerConnection
 	)
 
 	cleanup := func() {
@@ -244,15 +254,12 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	select {
 	case <-ctx.Done():
 		defer cleanup()
-		return nil, ErrDataChannelTimeout
+		return nil, ctx.Err()
 	case dc = <-dcChan:
 		if dc == nil {
 			defer cleanup()
 			return nil, fmt.Errorf("should be unreachable")
 		}
-		// clear to ignore opening of future data channels
-		// until noise handshake is complete
-		// pc.OnDataChannel(func(*webrtc.DataChannel) {})
 	}
 
 	// we do not yet know A's peer ID so accept any inbound
