@@ -45,7 +45,7 @@ func renderClientSdp(args sdpArgs) string {
 		args.Addr.Port,
 		args.Ufrag,
 		args.Password,
-		fingerprintSDP(args.Fingerprint),
+		fingerprintToSDP(args.Fingerprint),
 	)
 }
 
@@ -73,7 +73,7 @@ func renderServerSdp(args sdpArgs) string {
 	if args.Addr.IP.To4() == nil {
 		ipVersion = "IP6"
 	}
-	fp := fingerprintSDP(args.Fingerprint)
+	fp := fingerprintToSDP(args.Fingerprint)
 	return fmt.Sprintf(
 		SERVER_SDP,
 		ipVersion,
