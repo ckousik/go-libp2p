@@ -27,7 +27,7 @@ import (
 
 var log = logging.Logger("webrtc-transport")
 
-var dialMatcher = mafmt.And(mafmt.IP, mafmt.Base(ma.P_UDP), mafmt.Base(P_XWEBRTC), mafmt.Base(ma.P_CERTHASH))
+var dialMatcher = mafmt.And(mafmt.IP, mafmt.Base(ma.P_UDP), mafmt.Base(ma.P_WEBRTC), mafmt.Base(ma.P_CERTHASH))
 
 type WebRTCTransport struct {
 	webrtcConfig webrtc.Configuration
@@ -60,7 +60,7 @@ func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*We
 }
 
 func (t *WebRTCTransport) Protocols() []int {
-	return []int{P_XWEBRTC}
+	return []int{ma.P_WEBRTC}
 }
 
 func (t *WebRTCTransport) Proxy() bool {

@@ -10,16 +10,30 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-var mhToSdpHash = map[string]string{
-	"sha1":     "sha1",
-	"sha2-256": "sha-256",
-	"md5":      "md5",
+func mhToSdpHash(mh string) string {
+	switch mh {
+	case "sha1":
+		return "sha1"
+	case "sha2-256":
+		return "sha-256"
+	case "md5":
+		return "md5"
+	default:
+		return ""
+	}
 }
 
-var sdpHashToMh = map[string]string{
-	"sha-256": "sha2-256",
-	"sha1":    "sha1",
-	"md5":     "md5",
+func sdpHashToMh(sdpHash string) string {
+	switch sdpHash {
+	case "sha-256":
+		return "sha2-256"
+	case "sha1":
+		return "sha1"
+	case "md5":
+		return "md5"
+	default:
+		return ""
+	}
 }
 
 func maFingerprintToSdp(fp string) string {
@@ -38,13 +52,13 @@ func maFingerprintToSdp(fp string) string {
 	return result
 }
 
-func fingerprintSDP(fp *mh.DecodedMultihash) string {
+func fingerprintToSDP(fp *mh.DecodedMultihash) string {
 	if fp == nil {
 		return ""
 	}
 	fpDigest := maFingerprintToSdp(hex.EncodeToString(fp.Digest))
-	fpAlgo, ok := mhToSdpHash[strings.ToLower(fp.Name)]
-	if !ok {
+	fpAlgo := mhToSdpHash(strings.ToLower(fp.Name))
+	if fpAlgo == "" {
 		fpAlgo = strings.ToLower(fp.Name)
 	}
 	return fpAlgo + " " + fpDigest
@@ -67,8 +81,8 @@ func encodeDTLSFingerprint(fp webrtc.DTLSFingerprint) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	algo, ok := sdpHashToMh[strings.ToLower(fp.Algorithm)]
-	if !ok {
+	algo := sdpHashToMh(strings.ToLower(fp.Algorithm))
+	if algo == "" {
 		algo = fp.Algorithm
 	}
 	encoded, err := mh.EncodeName(digest, algo)

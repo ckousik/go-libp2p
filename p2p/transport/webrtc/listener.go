@@ -80,7 +80,7 @@ func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.Pack
 	if err != nil {
 		return nil, err
 	}
-	localMhBuf, _ := multihash.EncodeName(localMh, sdpHashToMh[localFingerprints[0].Algorithm])
+	localMhBuf, _ := multihash.EncodeName(localMh, sdpHashToMh(localFingerprints[0].Algorithm))
 	localFpMultibase, _ := multibase.Encode(multibase.Base64, localMhBuf)
 
 	var wg sync.WaitGroup
@@ -319,8 +319,8 @@ func verifyRemoteFingerprint(raw []byte, remoteMultibaseMultihash string) bool {
 	remoteFingerprint = maFingerprintToSdp(remoteFingerprint)
 
 	// create fingerprint for remote certificate
-	hashAlgoName, ok := mhToSdpHash[decoded.Name]
-	if !ok {
+	hashAlgoName := mhToSdpHash(decoded.Name)
+	if hashAlgoName == "" {
 		hashAlgoName = decoded.Name
 	}
 
