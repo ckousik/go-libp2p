@@ -215,7 +215,12 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		defer cleanup()
 		return nil, err
 	}
-	pc.SetLocalDescription(answer)
+
+	err = pc.SetLocalDescription(answer)
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
 
 	// await peerconnection connected state
 	select {
