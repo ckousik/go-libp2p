@@ -48,7 +48,7 @@ type udpMuxNewAddr struct {
 }
 
 const maxAddrSize = 512
-const receiveMTU = 8192
+const receiveMTU = 1500
 
 // NewUDPMuxNewAddr creates an implementation of UDPMux
 func NewUDPMuxNewAddr(params ice.UDPMuxParams, newAddrChan chan candidateAddr) *udpMuxNewAddr {
