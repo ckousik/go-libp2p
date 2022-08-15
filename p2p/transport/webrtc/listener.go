@@ -2,7 +2,6 @@ package libp2pwebrtc
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	"github.com/multiformats/go-multibase"
 	"github.com/multiformats/go-multihash"
 
-	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pion/ice/v2"
 	"github.com/pion/webrtc/v3"
 )
@@ -55,7 +53,7 @@ func init() {
 
 }
 
-/// implement net.Listener
+// / implement net.Listener
 type listener struct {
 	transport                 *WebRTCTransport
 	config                    webrtc.Configuration
@@ -83,7 +81,6 @@ func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.Pack
 	localMhBuf, _ := multihash.EncodeName(localMh, sdpHashToMh(localFingerprints[0].Algorithm))
 	localFpMultibase, _ := multibase.Encode(multibase.Base64, localMhBuf)
 
-	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 
 	l := &listener{
@@ -96,10 +93,9 @@ func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.Pack
 		ctx:                       ctx,
 		cancel:                    cancel,
 		connChan:                  make(chan tpt.CapableConn, 20),
-		wg:                        wg,
 	}
 
-	wg.Add(1)
+	l.wg.Add(1)
 	go l.startAcceptLoop()
 	return l, err
 }
@@ -301,40 +297,4 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	defer func() { _ = dc.Close() }()
 
 	return conn, nil
-}
-
-func verifyRemoteFingerprint(raw []byte, remoteMultibaseMultihash string) bool {
-	cert, err := x509.ParseCertificate(raw)
-	if err != nil {
-		log.Debugf("could not parse certificate: %v", err)
-		return false
-	}
-
-	_, remoteData, err := multibase.Decode(remoteMultibaseMultihash)
-	if err != nil {
-		log.Debugf("could not decode multibase: %v", err)
-		return false
-	}
-	decoded, err := multihash.Decode(remoteData)
-	if err != nil {
-		log.Debugf("could not decode multihash: %v", err)
-		return false
-	}
-	remoteFingerprint := hex.EncodeToString(decoded.Digest)
-	remoteFingerprint = maFingerprintToSdp(remoteFingerprint)
-
-	// create fingerprint for remote certificate
-	hashAlgoName := mhToSdpHash(decoded.Name)
-	if hashAlgoName == "" {
-		hashAlgoName = decoded.Name
-	}
-
-	hashAlgo, err := fingerprint.HashFromString(hashAlgoName)
-	if err != nil {
-		log.Debugf("could not find hash algo: %s %v", hashAlgoName, err)
-		return false
-	}
-	fp, err := fingerprint.Fingerprint(cert, hashAlgo)
-
-	return strings.EqualFold(fp, remoteFingerprint)
 }
