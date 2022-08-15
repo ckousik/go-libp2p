@@ -317,6 +317,9 @@ func (t *WebRTCTransport) generateNoisePrologue(pc *webrtc.PeerConnection) ([]by
 		return nil, err
 	}
 	remoteFp, err := fingerprint.Fingerprint(cert, hashAlgo)
+	if err != nil {
+		return nil, err
+	}
 	remoteFp = strings.ToLower(remoteFp)
 
 	mhAlgoName := sdpHashToMh(localFp.Algorithm)

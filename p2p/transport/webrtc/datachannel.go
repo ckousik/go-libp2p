@@ -32,7 +32,6 @@ const defaultReadBufferLen = 3000
 // and then a network.MuxedStream
 type dataChannel struct {
 	// TODO: Are these circular references okay?
-	pc            *webrtc.PeerConnection
 	dc            datachannel.ReadWriteCloser
 	laddr         net.Addr
 	raddr         net.Addr
@@ -42,7 +41,6 @@ type dataChannel struct {
 	writeDeadline *deadline
 	readBuffer    *bytes.Buffer
 	readChan      chan *iorequest
-	writeChan     chan *iorequest
 	ctx           context.Context
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
