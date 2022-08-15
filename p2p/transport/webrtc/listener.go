@@ -131,6 +131,11 @@ func (l *listener) Accept() (tpt.CapableConn, error) {
 }
 
 func (l *listener) Close() error {
+	select {
+	case <-l.ctx.Done():
+		return nil
+	default:
+	}
 	l.cancel()
 	l.wg.Wait()
 	return nil
