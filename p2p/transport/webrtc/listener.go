@@ -234,6 +234,10 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		Negotiated: func(v bool) *bool { return &v }(true),
 		ID:         func(v uint16) *uint16 { return &v }(1),
 	})
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
 
 	var handshakeOnce sync.Once
 	handshakeChannel.OnOpen(func() {

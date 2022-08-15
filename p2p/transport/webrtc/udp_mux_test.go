@@ -51,7 +51,7 @@ func TestUdpMuxNewAddrNewStun(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.ToLower(hash) != strings.ToLower(certhash) {
+		if !strings.EqualFold(hash, certhash) {
 			t.Fatalf("expected hash: %s, received: %s", certhash, hash)
 		}
 	case <-time.After(20 * time.Second):
