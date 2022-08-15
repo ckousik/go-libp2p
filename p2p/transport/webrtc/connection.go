@@ -71,8 +71,8 @@ func newConnection(
 
 		accept: accept,
 	}
-
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+		log.Debugf("[%s] incoming datachannel: %s", localPeer, dc.Label())
 		dc.OnOpen(func() {
 			dcrwc, err := dc.Detach()
 			if err != nil {
@@ -131,6 +131,7 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		error
 	}, 1)
 	dc.OnOpen(func() {
+		log.Debugf("[%s] opened new datachannel: %s", c.localPeer, dc.Label())
 		rwc, err := dc.Detach()
 		if err != nil {
 			result <- struct {

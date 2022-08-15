@@ -3,6 +3,7 @@ package libp2pwebrtc
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -136,7 +137,10 @@ func TestTransportDialerCanCreateStreams(t *testing.T) {
 	go func() {
 		conn, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
+		t.Log("dialer creating stream")
+		time.Sleep(100 * time.Millisecond)
 		stream, err := conn.OpenStream(context.Background())
+		t.Log("dialer created stream")
 		require.NoError(t, err)
 		_, err = stream.Write([]byte("test"))
 		require.NoError(t, err)
@@ -145,6 +149,7 @@ func TestTransportDialerCanCreateStreams(t *testing.T) {
 	lconn, err := listener.Accept()
 	require.NoError(t, err)
 	require.Equal(t, connectingPeer, lconn.RemotePeer())
+	t.Log("accepted connection")
 
 	stream, err := lconn.AcceptStream()
 	require.NoError(t, err)
