@@ -1,13 +1,17 @@
 package libp2pwebrtc
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"net"
+	"sort"
+	"strings"
 
 	"github.com/google/uuid"
 	ic "github.com/libp2p/go-libp2p-core/crypto"
@@ -21,7 +25,9 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	mafmt "github.com/multiformats/go-multiaddr-fmt"
 	manet "github.com/multiformats/go-multiaddr/net"
+	"github.com/multiformats/go-multihash"
 
+	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -293,54 +299,72 @@ func (t *WebRTCTransport) getCertificateFingerprint() (webrtc.DTLSFingerprint, e
 	return fps[0], nil
 }
 
+func (t *WebRTCTransport) generateNoisePrologue(pc *webrtc.PeerConnection) ([]byte, error) {
+	raw := pc.SCTP().Transport().GetRemoteCertificate()
+	cert, err := x509.ParseCertificate(raw)
+	if err != nil {
+		return nil, err
+	}
+	// guess hash algorithm
+	localFp, err := t.getCertificateFingerprint()
+	if err != nil {
+		return nil, err
+	}
+
+	hashAlgo, err := fingerprint.HashFromString(localFp.Algorithm)
+	if err != nil {
+		log.Debugf("could not find hash algo: %s %v", localFp.Algorithm, err)
+		return nil, err
+	}
+	remoteFp, err := fingerprint.Fingerprint(cert, hashAlgo)
+	remoteFp = strings.ToLower(remoteFp)
+
+	mhAlgoName := sdpHashToMh(localFp.Algorithm)
+	if mhAlgoName == "" {
+		mhAlgoName = localFp.Algorithm
+	}
+
+	local := strings.ReplaceAll(localFp.Value, ":", "")
+	remote := strings.ReplaceAll(remoteFp, ":", "")
+	localEncoded, err := multihash.EncodeName([]byte(local), mhAlgoName)
+	if err != nil {
+		log.Debugf("could not encode multihash for local fingerprint")
+		return nil, err
+	}
+	remoteEncoded, err := multihash.EncodeName([]byte(remote), mhAlgoName)
+	if err != nil {
+		log.Debugf("could not encode multihash for remote fingerprint")
+		return nil, err
+	}
+
+	b := [][]byte{localEncoded, remoteEncoded}
+	sort.Slice(b, func(i, j int) bool {
+		return bytes.Compare(b[i], b[j]) < 0
+	})
+	result := append([]byte("libp2p-webrtc-noise:"), b[0]...)
+	result = append(result, b[1]...)
+	return result, nil
+}
+
 func (t *WebRTCTransport) noiseHandshake(ctx context.Context, pc *webrtc.PeerConnection, datachannel *dataChannel, peer peer.ID, inbound bool) (secureConn sec.SecureConn, err error) {
+	prologue, err := t.generateNoisePrologue(pc)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate noise prologue: %v", err)
+	}
+	sessionTransport, err := t.noiseTpt.WithSessionOptions(noise.Prologue(prologue))
+	if err != nil {
+		return nil, fmt.Errorf("could not instantiate noise session transport: %v", err)
+	}
 	if inbound {
-		secureConn, err = t.noiseTpt.SecureInbound(ctx, datachannel, peer)
+		secureConn, err = sessionTransport.SecureInbound(ctx, datachannel, peer)
 		if err != nil {
 			return
 		}
 	} else {
-		secureConn, err = t.noiseTpt.SecureOutbound(ctx, datachannel, peer)
+		secureConn, err = sessionTransport.SecureOutbound(ctx, datachannel, peer)
 		if err != nil {
 			return
 		}
-	}
-	localFingerprint, err := t.getCertificateFingerprint()
-	if err != nil {
-		return
-	}
-	encodedMultibase, err := encodeDTLSFingerprint(localFingerprint)
-	if err != nil {
-		return
-	}
-
-	_, err = secureConn.Write([]byte(encodedMultibase))
-	if err != nil {
-		return
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		buf := make([]byte, 2048)
-		n, err := secureConn.Read(buf)
-		if err != nil {
-			done <- err
-		}
-		remoteFpMultibase := string(buf[:n])
-		if !verifyRemoteFingerprint(pc.SCTP().Transport().GetRemoteCertificate(), remoteFpMultibase) {
-			done <- fmt.Errorf("could not verify remote fingerprint")
-		}
-		close(done)
-	}()
-
-	select {
-	case err = <-done:
-		if err != nil {
-			err = fmt.Errorf("dialed: read failed: %v", err)
-			return
-		}
-	case <-ctx.Done():
-		return nil, ErrNoiseHandshakeTimeout
 	}
 	return secureConn, nil
 }
