@@ -61,6 +61,7 @@ func TestTransportCanListen(t *testing.T) {
 	tr1, connectingPeer := getTransport(t)
 
 	go func() {
+		t.Log(listener.Multiaddr())
 		_, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
 	}()
