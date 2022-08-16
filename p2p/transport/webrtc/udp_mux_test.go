@@ -19,7 +19,7 @@ func TestUdpMuxNewAddrNewStun(t *testing.T) {
 		panic(err)
 	}
 
-	clientConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	clientConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: listenerIp, Port: 0})
 	loggerFactory := logging.NewDefaultLoggerFactory()
 	loggerFactory.Writer = os.Stdout
 	loggerFactory.DefaultLogLevel = logging.LogLevelDebug
