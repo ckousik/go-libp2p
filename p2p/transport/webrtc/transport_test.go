@@ -2,6 +2,7 @@ package libp2pwebrtc
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -51,9 +52,9 @@ func TestTransportCanDial(t *testing.T) {
 	}
 }
 
-func TestTransportCanListen(t *testing.T) {
+func TestTransportCanListenSingle(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
-	listenMultiaddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/udp/0/webrtc")
+	listenMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/udp/0/webrtc")
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
@@ -74,7 +75,7 @@ func TestTransportCanListen(t *testing.T) {
 
 func TestTransportCanListenMultiple(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
-	listenMultiaddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/udp/0/webrtc")
+	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
@@ -96,7 +97,7 @@ func TestTransportCanListenMultiple(t *testing.T) {
 
 func TestTransportListenerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
-	listenMultiaddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/udp/0/webrtc")
+	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
@@ -127,7 +128,7 @@ func TestTransportListenerCanCreateStreams(t *testing.T) {
 
 func TestTransportDialerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
-	listenMultiaddr, err := multiaddr.NewMultiaddr("/ip4/0.0.0.0/udp/0/webrtc")
+	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
