@@ -110,6 +110,7 @@ func (l *listener) startAcceptLoop() {
 			go func() {
 				ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 				defer cancelFunc()
+				log.Debugf("new incoming connection: %v", addr)
 				conn, err := l.accept(ctx, addr)
 				if err != nil {
 					log.Debugf("could not accept connection: %v", err)
