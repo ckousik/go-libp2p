@@ -14,7 +14,7 @@ import (
 )
 
 func TestUdpMuxNewAddrNewStun(t *testing.T) {
-	serverConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(0, 0, 0, 0), Port: 0})
+	serverConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: listenerIp, Port: 0})
 	if err != nil {
 		panic(err)
 	}
