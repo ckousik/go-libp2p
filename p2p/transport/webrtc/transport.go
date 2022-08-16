@@ -91,6 +91,7 @@ func (t *WebRTCTransport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not listen on udp: %v", err)
 	}
+	log.Debugf("[webrtc] listening on address: %s", socket.LocalAddr())
 
 	// construct multiaddr
 	listenerMultiaddr, err := manet.FromNetAddr(socket.LocalAddr())

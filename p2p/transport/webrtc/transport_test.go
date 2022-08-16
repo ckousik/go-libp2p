@@ -54,7 +54,7 @@ func TestTransportCanDial(t *testing.T) {
 
 func TestTransportCanListenSingle(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
-	listenMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/udp/0/webrtc")
+	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
@@ -62,6 +62,7 @@ func TestTransportCanListenSingle(t *testing.T) {
 	tr1, connectingPeer := getTransport(t)
 
 	go func() {
+		t.Logf("dialing: %s", listener.Multiaddr())
 		_, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
 	}()
