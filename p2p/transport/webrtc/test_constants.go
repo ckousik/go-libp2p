@@ -6,6 +6,7 @@ package libp2pwebrtc
 import "net"
 
 var listenerIp = net.IPv4(127, 0, 0, 1)
+var dialerIp = net.IPv4(127, 0, 0, 1)
 
 func init() {
 	ifaces, err := net.Interfaces()
@@ -25,6 +26,7 @@ func init() {
 			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.IsPrivate() {
 				if ipnet.IP.To4() != nil {
 					listenerIp = ipnet.IP.To4()
+					dialerIp = listenerIp
 					return
 				}
 			}
