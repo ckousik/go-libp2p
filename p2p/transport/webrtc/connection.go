@@ -3,6 +3,7 @@ package libp2pwebrtc
 import (
 	"context"
 	"os"
+	"sync"
 
 	"github.com/google/uuid"
 	ic "github.com/libp2p/go-libp2p-core/crypto"
@@ -28,12 +29,13 @@ type connection struct {
 	remoteKey       ic.PubKey
 	remoteMultiaddr ma.Multiaddr
 
-	streams []network.MuxedStream
+	streams map[uint16]*dataChannel
 
 	accept chan network.MuxedStream
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	m      sync.Mutex
 }
 
 func newConnection(
@@ -49,7 +51,7 @@ func newConnection(
 	remoteKey ic.PubKey,
 	remoteMultiaddr ma.Multiaddr,
 ) (*connection, error) {
-	accept := make(chan network.MuxedStream, 1)
+	accept := make(chan network.MuxedStream, 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -67,24 +69,28 @@ func newConnection(
 		remoteMultiaddr: remoteMultiaddr,
 		ctx:             ctx,
 		cancel:          cancel,
-		streams:         []network.MuxedStream{},
+		streams:         make(map[uint16]*dataChannel),
 
 		accept: accept,
 	}
+
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		log.Debugf("[%s] incoming datachannel: %s", localPeer, dc.Label())
 		dc.OnOpen(func() {
-			dcrwc, err := dc.Detach()
+			detached, err := dc.Detach()
 			if err != nil {
-				// cannot accept a non-detached datachannel
+				log.Warn("[%s] could not detach data channel: %s", localPeer, dc.Label())
 				return
 			}
-
-			stream := newDataChannel(dcrwc, pc, nil, nil)
-			conn.streams = append(conn.streams, stream)
+			stream := newDataChannel(detached, dc, pc, nil, nil)
+			conn.m.Lock()
+			conn.streams[*dc.ID()] = stream
+			conn.m.Unlock()
 			accept <- stream
 		})
+		dc.SetBufferedAmountLowThreshold(0)
 	})
+	// log.Infof("localMultiaddr: %s", conn.localMultiaddr)
 	return conn, nil
 }
 
@@ -95,15 +101,13 @@ func (c *connection) Close() error {
 		return nil
 	}
 
-	_ = c.pc.Close()
 	c.scope.Done()
-	c.cancel()
 	// cleanup routine
-	go func() {
-		for _, stream := range c.streams {
-			_ = stream.Close()
-		}
-	}()
+	for _, stream := range c.streams {
+		_ = stream.Close()
+	}
+	c.cancel()
+	_ = c.pc.Close()
 	return nil
 }
 
@@ -122,7 +126,11 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 	}
 
 	label := uuid.New().String()
-	dc, err := c.pc.CreateDataChannel(label, nil)
+	dc, err := c.pc.CreateDataChannel(label, &webrtc.DataChannelInit{
+		Ordered:        func(b bool) *bool { return &b }(true),
+		MaxRetransmits: func(x uint16) *uint16 { return &x }(100),
+	})
+	dc.SetBufferedAmountLowThreshold(0)
 	if err != nil {
 		return nil, err
 	}
@@ -131,18 +139,20 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		error
 	}, 1)
 	dc.OnOpen(func() {
-		log.Debugf("[%s] opened new datachannel: %s", c.localPeer, dc.Label())
-		rwc, err := dc.Detach()
+		// log.Infof("[%s] opened new datachannel: %d, %s", c.localPeer, dc.ID(), dc.Label())
+		detached, err := dc.Detach()
 		if err != nil {
+			log.Warn("[%s] could not detach data channel: %s", c.localPeer, dc.Label())
 			result <- struct {
 				network.MuxedStream
 				error
 			}{nil, err}
 			return
 		}
-
-		stream := newDataChannel(rwc, c.pc, nil, nil)
-		c.streams = append(c.streams, stream)
+		stream := newDataChannel(detached, dc, c.pc, nil, nil)
+		c.m.Lock()
+		c.streams[*dc.ID()] = stream
+		c.m.Unlock()
 		result <- struct {
 			network.MuxedStream
 			error
@@ -172,6 +182,11 @@ func (c *connection) LocalPeer() peer.ID {
 	return c.localPeer
 }
 
+// only used during setup
+func (c *connection) setRemotePeer(id peer.ID) {
+	c.remotePeer = id
+}
+
 func (c *connection) LocalPrivateKey() ic.PrivKey {
 	return c.privKey
 }
@@ -182,6 +197,10 @@ func (c *connection) RemotePeer() peer.ID {
 
 func (c *connection) RemotePublicKey() ic.PubKey {
 	return c.remoteKey
+}
+
+func (c *connection) setRemotePublicKey(key ic.PubKey) {
+	c.remoteKey = key
 }
 
 // implement network.ConnMultiaddrs

@@ -110,7 +110,6 @@ func (l *listener) startAcceptLoop() {
 			go func() {
 				ctx, cancelFunc := context.WithTimeout(context.Background(), 20*time.Second)
 				defer cancelFunc()
-				log.Debugf("new incoming connection: %v", addr)
 				conn, err := l.accept(ctx, addr)
 				if err != nil {
 					log.Debugf("could not accept connection: %v", err)
@@ -254,6 +253,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 			}
 			dcChan <- newDataChannel(
 				detached,
+				handshakeChannel,
 				pc,
 				l.mux.LocalAddr(),
 				addr.raddr,
@@ -273,6 +273,23 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		}
 	}
 
+	conn, err := newConnection(
+		pc,
+		l.transport,
+		scope,
+		l.transport.localPeerId,
+		l.transport.privKey,
+		l.localMultiaddr,
+		"",
+		nil,
+		remoteMultiaddr,
+	)
+
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
 	// we do not yet know A's peer ID so accept any inbound
 	secureConn, err := l.transport.noiseHandshake(ctx, pc, dc, "", true)
 	if err != nil {
@@ -287,24 +304,10 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
-	conn, err := newConnection(
-		pc,
-		l.transport,
-		scope,
-		secureConn.LocalPeer(),
-		secureConn.LocalPrivateKey(),
-		l.localMultiaddr,
-		secureConn.RemotePeer(),
-		secureConn.RemotePublicKey(),
-		remoteMultiaddr,
-	)
+	conn.setRemotePeer(secureConn.RemotePeer())
+	conn.setRemotePublicKey(secureConn.RemotePublicKey())
 
-	if err != nil {
-		defer cleanup()
-		return nil, err
-	}
-
-	defer func() { _ = dc.Close() }()
+	// defer func() { _ = dc.Close() }()
 
 	return conn, nil
 }

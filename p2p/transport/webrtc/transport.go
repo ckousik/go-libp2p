@@ -40,6 +40,7 @@ type WebRTCTransport struct {
 	rcmgr        network.ResourceManager
 	privKey      ic.PrivKey
 	noiseTpt     *noise.Transport
+	localPeerId  peer.ID
 }
 
 var _ tpt.Transport = &WebRTCTransport{}
@@ -47,6 +48,10 @@ var _ tpt.Transport = &WebRTCTransport{}
 type Option func(*WebRTCTransport) error
 
 func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*WebRTCTransport, error) {
+	localPeerId, err := peer.IDFromPrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not get local peer ID: %v", err)
+	}
 	pk, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate rsa key for cert: %v", err)
@@ -62,11 +67,11 @@ func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*We
 	if err != nil {
 		return nil, fmt.Errorf("unable to create the noise transport")
 	}
-	return &WebRTCTransport{rcmgr: rcmgr, webrtcConfig: config, privKey: privKey, noiseTpt: noiseTpt}, nil
+	return &WebRTCTransport{rcmgr: rcmgr, webrtcConfig: config, privKey: privKey, noiseTpt: noiseTpt, localPeerId: localPeerId}, nil
 }
 
 func (t *WebRTCTransport) Protocols() []int {
-	return []int{ma.P_WEBRTC}
+	return []int{ma.P_WEBRTC, ma.P_CERTHASH}
 }
 
 func (t *WebRTCTransport) Proxy() bool {
@@ -78,6 +83,11 @@ func (t *WebRTCTransport) CanDial(addr ma.Multiaddr) bool {
 }
 
 func (t *WebRTCTransport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
+	addr, wrtcComponent := ma.SplitLast(addr)
+	isWebrtc := wrtcComponent.Equal(ma.StringCast("/webrtc"))
+	if !isWebrtc {
+		return nil, fmt.Errorf("must listen on webrtc multiaddr")
+	}
 	nw, host, err := manet.DialArgs(addr)
 	if err != nil {
 		return nil, fmt.Errorf("listener could not fetch dialargs: %v", err)
@@ -91,7 +101,6 @@ func (t *WebRTCTransport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not listen on udp: %v", err)
 	}
-	log.Debugf("[webrtc] listening on address: %s", socket.LocalAddr())
 
 	// construct multiaddr
 	listenerMultiaddr, err := manet.FromNetAddr(socket.LocalAddr())
@@ -119,6 +128,8 @@ func (t *WebRTCTransport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
 	}
 
 	listenerMultiaddr = listenerMultiaddr.Encapsulate(certMultiaddress)
+
+	// log.Debugf("can be dialed at: %s", listenerMultiaddr.Encapsulate(ma.StringCast(fmt.Sprintf("/p2p/%s", t.localPeerId))))
 
 	return newListener(
 		t,
@@ -221,7 +232,7 @@ func (t *WebRTCTransport) Dial(
 		}
 
 		laddr := &net.UDPAddr{IP: net.ParseIP(cp.Local.Address), Port: int(cp.Local.Port)}
-		opened <- newDataChannel(detached, pc, laddr, raddr)
+		opened <- newDataChannel(detached, dc, pc, laddr, raddr)
 	})
 
 	offer, err := pc.CreateOffer(nil)
@@ -262,32 +273,34 @@ func (t *WebRTCTransport) Dial(
 		return nil, ErrDataChannelTimeout
 	}
 
-	secureConn, err := t.noiseHandshake(ctx, pc, dataChannel, p, false)
-	if err != nil {
-		defer cleanup()
-		return nil, err
-	}
-
 	localAddr, err := manet.FromNetAddr(dataChannel.LocalAddr())
 	if err != nil {
 		defer cleanup()
 		return nil, err
 	}
+
 	conn, err := newConnection(
 		pc,
 		t,
 		scope,
-		secureConn.LocalPeer(),
-		secureConn.LocalPrivateKey(),
+		t.localPeerId,
+		t.privKey,
 		localAddr,
-		secureConn.RemotePeer(),
-		secureConn.RemotePublicKey(),
+		p,
+		nil,
 		remoteMultiaddr,
 	)
 	if err != nil {
 		defer cleanup()
 		return nil, err
 	}
+	secureConn, err := t.noiseHandshake(ctx, pc, dataChannel, p, false)
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
+	conn.setRemotePublicKey(secureConn.RemotePublicKey())
 
 	return conn, nil
 }

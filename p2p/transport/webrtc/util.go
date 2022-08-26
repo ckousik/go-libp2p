@@ -89,5 +89,5 @@ func encodeDTLSFingerprint(fp webrtc.DTLSFingerprint) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return multibase.Encode(multibase.Base16, encoded)
+	return multibase.Encode(multibase.Base58BTC, encoded)
 }
