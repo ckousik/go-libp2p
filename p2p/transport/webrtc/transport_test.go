@@ -25,7 +25,7 @@ func getTransport(t *testing.T) (tpt.Transport, peer.ID) {
 	return transport, peerID
 }
 
-func TestTransportCanDial(t *testing.T) {
+func TestTransportWebRTCCanDial(t *testing.T) {
 	tr, _ := getTransport(t)
 	invalid := []string{
 		"/ip4/1.2.3.4/udp/1234/webrtc",
@@ -52,7 +52,22 @@ func TestTransportCanDial(t *testing.T) {
 	}
 }
 
-func TestTransportCanListenSingle(t *testing.T) {
+func TestTransportWebRTC_ListenFailsOnNonWebRTCMultiaddr(t *testing.T) {
+	tr, _ := getTransport(t)
+	testAddrs := []string{
+		"/ip4/0.0.0.0/udp/0",
+		"/ip4/0.0.0.0/tcp/0/wss",
+	}
+	for _, addr := range testAddrs {
+		listenMultiaddr, err := multiaddr.NewMultiaddr(addr)
+		require.NoError(t, err)
+		listener, err := tr.Listen(listenMultiaddr)
+		require.Error(t, err)
+		require.Nil(t, listener)
+	}
+}
+
+func TestTransportWebRTC_CanListenSingle(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
@@ -74,7 +89,7 @@ func TestTransportCanListenSingle(t *testing.T) {
 	require.Equal(t, connectingPeer, conn.RemotePeer())
 }
 
-func TestTransportCanListenMultiple(t *testing.T) {
+func TestTransportWebRTCCanListenMultiple(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
@@ -96,7 +111,7 @@ func TestTransportCanListenMultiple(t *testing.T) {
 	}
 }
 
-func TestTransportListenerCanCreateStreams(t *testing.T) {
+func TestTransportWebRTCListenerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
@@ -127,7 +142,7 @@ func TestTransportListenerCanCreateStreams(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestTransportDialerCanCreateStreams(t *testing.T) {
+func TestTransportWebRTCDialerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
