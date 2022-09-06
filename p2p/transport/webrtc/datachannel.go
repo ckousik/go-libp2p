@@ -22,7 +22,7 @@ import (
 
 var _ network.MuxedStream = &dataChannel{}
 
-const defaultReadBufferLen = 8192
+const defaultReadBufferLen = 4096
 
 // Package pion detached data channel into a net.Conn
 // and then a network.MuxedStream
@@ -38,11 +38,11 @@ type dataChannel struct {
 	closeReadOnce  sync.Once
 	resetOnce      sync.Once
 
-	remoteWriteClosed atomic.Bool
-	localWriteClosed  atomic.Bool
+	remoteWriteClosed uint32
+	localWriteClosed  uint32
 
-	remoteReadClosed atomic.Bool
-	localReadClosed  atomic.Bool
+	remoteReadClosed uint32
+	localReadClosed  uint32
 
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -87,7 +87,7 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 		return
 	}
 
-	if !d.remoteWriteClosed.Load() && !d.localReadClosed.Load() {
+	if !d.isRemoteWriteClosed() && !d.isLocalReadClosed() {
 		d.readBuf.Write(pbmsg.GetMessage())
 		select {
 		case d.readSignal <- struct{}{}:
@@ -98,7 +98,7 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 	if pbmsg.Flag != nil {
 		switch pbmsg.GetFlag() {
 		case pb.Message_FIN:
-			d.remoteWriteClosed.Store(true)
+			atomic.StoreUint32(&d.remoteWriteClosed, 1)
 			select {
 			case <-d.readSignal:
 			default:
@@ -106,7 +106,7 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 			}
 
 		case pb.Message_STOP_SENDING:
-			d.remoteReadClosed.Store(true)
+			atomic.StoreUint32(&d.remoteReadClosed, 1)
 		case pb.Message_RESET:
 			log.Errorf("remote reset")
 			d.Close()
@@ -121,7 +121,7 @@ func (d *dataChannel) Read(b []byte) (int, error) {
 		d.m.Lock()
 		read, err := d.readBuf.Read(b)
 		d.m.Unlock()
-		if err == io.EOF && d.remoteWriteClosed.Load() {
+		if err == io.EOF && d.isRemoteWriteClosed() {
 			return read, io.EOF
 		}
 		// log.Warnf("read %d bytes: %s", read, string(b[:read]))
@@ -140,7 +140,7 @@ func (d *dataChannel) Read(b []byte) (int, error) {
 }
 
 func (d *dataChannel) Write(b []byte) (int, error) {
-	if d.localWriteClosed.Load() || d.remoteReadClosed.Load() {
+	if d.isLocalWriteClosed() || d.isRemoteReadClosed() {
 		return 0, io.ErrClosedPipe
 	}
 	msg := &pb.Message{
@@ -169,7 +169,7 @@ func (d *dataChannel) Close() error {
 func (d *dataChannel) CloseRead() error {
 	var err error
 	d.closeReadOnce.Do(func() {
-		d.localReadClosed.Store(true)
+		atomic.StoreUint32(&d.localReadClosed, 1)
 		msg := &pb.Message{
 			Flag: pb.Message_STOP_SENDING.Enum(),
 		}
@@ -193,7 +193,7 @@ func (d *dataChannel) remoteClosed() {
 func (d *dataChannel) CloseWrite() error {
 	var err error
 	d.closeWriteOnce.Do(func() {
-		d.localWriteClosed.Store(true)
+		atomic.StoreUint32(&d.localWriteClosed, 1)
 		msg := &pb.Message{
 			Flag: pb.Message_FIN.Enum(),
 		}
@@ -248,4 +248,17 @@ func (d *dataChannel) SetReadDeadline(t time.Time) error {
 func (d *dataChannel) SetWriteDeadline(t time.Time) error {
 	d.writeDeadline.set(t)
 	return nil
+}
+
+func (d *dataChannel) isRemoteWriteClosed() bool {
+	return atomic.LoadUint32(&d.remoteWriteClosed) == 1
+}
+func (d *dataChannel) isLocalWriteClosed() bool {
+	return atomic.LoadUint32(&d.localWriteClosed) == 1
+}
+func (d *dataChannel) isRemoteReadClosed() bool {
+	return atomic.LoadUint32(&d.remoteReadClosed) == 1
+}
+func (d *dataChannel) isLocalReadClosed() bool {
+	return atomic.LoadUint32(&d.localReadClosed) == 1
 }
