@@ -97,7 +97,7 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 
 	if pbmsg.Flag != nil {
 		switch pbmsg.GetFlag() {
-		case pb.Message_CLOSE_WRITE:
+		case pb.Message_FIN:
 			d.remoteWriteClosed.Store(true)
 			select {
 			case <-d.readSignal:
@@ -105,7 +105,7 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 				close(d.readSignal)
 			}
 
-		case pb.Message_CLOSE_READ:
+		case pb.Message_STOP_SENDING:
 			d.remoteReadClosed.Store(true)
 		case pb.Message_RESET:
 			log.Errorf("remote reset")
@@ -171,7 +171,7 @@ func (d *dataChannel) CloseRead() error {
 	d.closeReadOnce.Do(func() {
 		d.localReadClosed.Store(true)
 		msg := &pb.Message{
-			Flag: pb.Message_CLOSE_READ.Enum(),
+			Flag: pb.Message_STOP_SENDING.Enum(),
 		}
 		data, err := msg.Marshal()
 		if err != nil {
@@ -195,7 +195,7 @@ func (d *dataChannel) CloseWrite() error {
 	d.closeWriteOnce.Do(func() {
 		d.localWriteClosed.Store(true)
 		msg := &pb.Message{
-			Flag: pb.Message_CLOSE_WRITE.Enum(),
+			Flag: pb.Message_FIN.Enum(),
 		}
 		data, err := msg.Marshal()
 		if err != nil {
