@@ -9,24 +9,22 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/sec"
+	"github.com/libp2p/go-libp2p/core/sec/insecure"
+	"github.com/libp2p/go-libp2p/core/test"
+	"github.com/libp2p/go-libp2p/core/transport"
+	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
 	csms "github.com/libp2p/go-libp2p/p2p/net/conn-security-multistream"
 	tptu "github.com/libp2p/go-libp2p/p2p/net/upgrader"
 	ttransport "github.com/libp2p/go-libp2p/p2p/transport/testsuite"
-
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/sec"
-	"github.com/libp2p/go-libp2p-core/sec/insecure"
-	"github.com/libp2p/go-libp2p-core/test"
-	"github.com/libp2p/go-libp2p-core/transport"
-	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
 
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/require"
@@ -194,7 +192,7 @@ func connectAndExchangeData(t *testing.T, laddr ma.Multiaddr, secure bool) {
 	require.NoError(t, err)
 	defer str.Close()
 
-	out, err := ioutil.ReadAll(str)
+	out, err := io.ReadAll(str)
 	require.NoError(t, err)
 	require.Equal(t, out, msg, "got wrong message")
 }

@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p/core/network"
 	test "github.com/libp2p/go-libp2p/p2p/muxer/testsuite"
 )
 

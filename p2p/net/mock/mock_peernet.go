@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/peerstore"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -271,7 +271,7 @@ func (pn *peernet) ClosePeer(p peer.ID) error {
 		return nil
 	}
 
-	var conns []*conn
+	conns := make([]*conn, 0, len(cs))
 	for c := range cs {
 		conns = append(conns, c)
 	}

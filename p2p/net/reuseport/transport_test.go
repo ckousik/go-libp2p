@@ -141,7 +141,6 @@ func TestGlobalPreferenceV4(t *testing.T) {
 	testPrefer(t, loopbackV4, loopbackV4, globalV4)
 	t.Logf("when listening on %v, should prefer %v over %v", loopbackV4, unspecV4, globalV4)
 	testPrefer(t, loopbackV4, unspecV4, globalV4)
-
 	t.Logf("when listening on %v, should prefer %v over %v", globalV4, unspecV4, loopbackV4)
 	testPrefer(t, globalV4, unspecV4, loopbackV4)
 }
@@ -177,8 +176,6 @@ func testPrefer(t *testing.T, listen, prefer, avoid ma.Multiaddr) {
 	}
 	defer listenerB1.Close()
 
-	dialOne(t, &trB, listenerA, listenerB1.Addr().(*net.TCPAddr).Port)
-
 	listenerB2, err := trB.Listen(prefer)
 	if err != nil {
 		t.Fatal(err)
@@ -186,11 +183,6 @@ func testPrefer(t *testing.T, listen, prefer, avoid ma.Multiaddr) {
 	defer listenerB2.Close()
 
 	dialOne(t, &trB, listenerA, listenerB2.Addr().(*net.TCPAddr).Port)
-
-	// Closing the listener should reset the dialer.
-	listenerB2.Close()
-
-	dialOne(t, &trB, listenerA, listenerB1.Addr().(*net.TCPAddr).Port)
 }
 
 func TestV6V4(t *testing.T) {

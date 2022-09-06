@@ -3,13 +3,12 @@ package swarm_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	. "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
-
-	"github.com/libp2p/go-libp2p-core/network"
 
 	"github.com/stretchr/testify/require"
 )
@@ -115,7 +114,7 @@ func TestNetworkOpenStream(t *testing.T) {
 		defer close(done)
 		defer s.Close()
 
-		buf, err := ioutil.ReadAll(s)
+		buf, err := io.ReadAll(s)
 		if err != nil {
 			t.Error(err)
 			return

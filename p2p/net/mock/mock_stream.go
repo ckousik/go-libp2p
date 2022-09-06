@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 var streamCounter int64
@@ -69,7 +69,7 @@ func newStream(w *io.PipeWriter, r *io.PipeReader, dir network.Direction) *strea
 	return s
 }
 
-//  How to handle errors with writes?
+// How to handle errors with writes?
 func (s *stream) Write(p []byte) (n int, err error) {
 	l := s.conn.link
 	delay := l.GetLatency() + l.RateLimit(len(p))

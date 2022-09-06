@@ -3,7 +3,6 @@ package noise
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"testing"
@@ -11,8 +10,8 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/sec"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/sec"
 )
 
 type testMode int
@@ -178,7 +177,7 @@ func benchDataTransfer(b *benchenv, dataSize int64, m testMode) {
 		case readBufferLtPlainText:
 			rbuf = make([]byte, len(plainTextBufs[i])-2)
 		}
-		writeTos[i] = &discardWithBuffer{rbuf, ioutil.Discard}
+		writeTos[i] = &discardWithBuffer{rbuf, io.Discard}
 	}
 
 	b.ResetTimer()

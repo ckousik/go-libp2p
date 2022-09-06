@@ -2,12 +2,19 @@ package swarm
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/sec/insecure"
+	"github.com/libp2p/go-libp2p/core/transport"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	msmux "github.com/libp2p/go-libp2p/p2p/muxer/muxer-multistream"
 	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
 	csms "github.com/libp2p/go-libp2p/p2p/net/conn-security-multistream"
@@ -15,27 +22,28 @@ import (
 	quic "github.com/libp2p/go-libp2p/p2p/transport/quic"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 
-	"github.com/libp2p/go-libp2p-core/peerstore"
-	"github.com/libp2p/go-libp2p-core/sec/insecure"
-	"github.com/libp2p/go-libp2p-core/transport"
-
-	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
-	tnet "github.com/libp2p/go-libp2p-testing/net"
 	ma "github.com/multiformats/go-multiaddr"
-
 	"github.com/stretchr/testify/require"
 )
 
+func newPeer(t *testing.T) (crypto.PrivKey, peer.ID) {
+	priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
+	id, err := peer.IDFromPrivateKey(priv)
+	require.NoError(t, err)
+	return priv, id
+}
+
 func makeSwarm(t *testing.T) *Swarm {
-	p := tnet.RandPeerNetParamsOrFatal(t)
+	priv, id := newPeer(t)
 
 	ps, err := pstoremem.NewPeerstore()
 	require.NoError(t, err)
-	ps.AddPubKey(p.ID, p.PubKey)
-	ps.AddPrivKey(p.ID, p.PrivKey)
+	ps.AddPubKey(id, priv.GetPublic())
+	ps.AddPrivKey(id, priv)
 	t.Cleanup(func() { ps.Close() })
 
-	s, err := NewSwarm(p.ID, ps, WithDialTimeout(time.Second))
+	s, err := NewSwarm(id, ps, WithDialTimeout(time.Second))
 	require.NoError(t, err)
 
 	upgrader := makeUpgrader(t, s)
@@ -47,11 +55,11 @@ func makeSwarm(t *testing.T) *Swarm {
 	if err := s.AddTransport(tcpTransport); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Listen(p.Addr); err != nil {
+	if err := s.Listen(ma.StringCast("/ip4/127.0.0.1/tcp/0")); err != nil {
 		t.Fatal(err)
 	}
 
-	quicTransport, err := quic.NewTransport(p.PrivKey, nil, nil, nil)
+	quicTransport, err := quic.NewTransport(priv, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,13 +179,13 @@ func TestDialWorkerLoopFailure(t *testing.T) {
 	s1 := makeSwarm(t)
 	defer s1.Close()
 
-	p2 := tnet.RandPeerNetParamsOrFatal(t)
+	_, p2 := newPeer(t)
 
-	s1.Peerstore().AddAddrs(p2.ID, []ma.Multiaddr{ma.StringCast("/ip4/11.0.0.1/tcp/1234"), ma.StringCast("/ip4/11.0.0.1/udp/1234/quic")}, peerstore.PermanentAddrTTL)
+	s1.Peerstore().AddAddrs(p2, []ma.Multiaddr{ma.StringCast("/ip4/11.0.0.1/tcp/1234"), ma.StringCast("/ip4/11.0.0.1/udp/1234/quic")}, peerstore.PermanentAddrTTL)
 
 	reqch := make(chan dialRequest)
 	resch := make(chan dialResponse)
-	worker := newDialWorker(s1, p2.ID, reqch)
+	worker := newDialWorker(s1, p2, reqch)
 	go worker.loop()
 
 	reqch <- dialRequest{ctx: context.Background(), resch: resch}
@@ -196,12 +204,12 @@ func TestDialWorkerLoopConcurrentFailure(t *testing.T) {
 	s1 := makeSwarm(t)
 	defer s1.Close()
 
-	p2 := tnet.RandPeerNetParamsOrFatal(t)
+	_, p2 := newPeer(t)
 
-	s1.Peerstore().AddAddrs(p2.ID, []ma.Multiaddr{ma.StringCast("/ip4/11.0.0.1/tcp/1234"), ma.StringCast("/ip4/11.0.0.1/udp/1234/quic")}, peerstore.PermanentAddrTTL)
+	s1.Peerstore().AddAddrs(p2, []ma.Multiaddr{ma.StringCast("/ip4/11.0.0.1/tcp/1234"), ma.StringCast("/ip4/11.0.0.1/udp/1234/quic")}, peerstore.PermanentAddrTTL)
 
 	reqch := make(chan dialRequest)
-	worker := newDialWorker(s1, p2.ID, reqch)
+	worker := newDialWorker(s1, p2, reqch)
 	go worker.loop()
 
 	const dials = 100
@@ -286,16 +294,16 @@ func TestDialWorkerLoopConcurrentFailureStress(t *testing.T) {
 	s1 := makeSwarm(t)
 	defer s1.Close()
 
-	p2 := tnet.RandPeerNetParamsOrFatal(t)
+	_, p2 := newPeer(t)
 
 	var addrs []ma.Multiaddr
 	for i := 0; i < 16; i++ {
 		addrs = append(addrs, ma.StringCast(fmt.Sprintf("/ip4/11.0.0.%d/tcp/%d", i%256, 1234+i)))
 	}
-	s1.Peerstore().AddAddrs(p2.ID, addrs, peerstore.PermanentAddrTTL)
+	s1.Peerstore().AddAddrs(p2, addrs, peerstore.PermanentAddrTTL)
 
 	reqch := make(chan dialRequest)
-	worker := newDialWorker(s1, p2.ID, reqch)
+	worker := newDialWorker(s1, p2, reqch)
 	go worker.loop()
 
 	const dials = 100

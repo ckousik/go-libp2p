@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"runtime"
 	"strconv"
@@ -16,10 +15,10 @@ import (
 	crand "crypto/rand"
 	mrand "math/rand"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/transport"
 	"github.com/libp2p/go-libp2p-testing/race"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/transport"
 
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -56,7 +55,7 @@ func fullClose(t *testing.T, s network.MuxedStream) {
 		s.Reset()
 		return
 	}
-	b, err := ioutil.ReadAll(s)
+	b, err := io.ReadAll(s)
 	if err != nil {
 		t.Error(err)
 	}

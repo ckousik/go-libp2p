@@ -3,48 +3,85 @@ package mocknet
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"fmt"
 	"io"
 	"math"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 
 	"github.com/libp2p/go-libp2p-testing/ci"
-	tnet "github.com/libp2p/go-libp2p-testing/net"
+	tetc "github.com/libp2p/go-libp2p-testing/etc"
 	"github.com/libp2p/go-libp2p-testing/race"
+	ma "github.com/multiformats/go-multiaddr"
+	"github.com/stretchr/testify/require"
 )
+
+var lastPort = struct {
+	port int
+	sync.Mutex
+}{}
+
+// randLocalTCPAddress returns a random multiaddr. it suppresses errors
+// for nice composability-- do check the address isn't nil.
+//
+// NOTE: for real network tests, use a :0 address, so the kernel
+// assigns an unused TCP port. otherwise you may get clashes.
+func randLocalTCPAddress() ma.Multiaddr {
+	// chances are it will work out, but it **might** fail if the port is in use
+	// most ports above 10000 aren't in use by long running processes, so yay.
+	// (maybe there should be a range of "loopback" ports that are guaranteed
+	// to be open for the process, but naturally can only talk to self.)
+
+	lastPort.Lock()
+	if lastPort.port == 0 {
+		lastPort.port = 10000 + tetc.SeededRand.Intn(50000)
+	}
+	port := lastPort.port
+	lastPort.port++
+	lastPort.Unlock()
+
+	addr := fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port)
+	maddr, _ := ma.NewMultiaddr(addr)
+	return maddr
+}
 
 func TestNetworkSetup(t *testing.T) {
 	ctx := context.Background()
-	id1 := tnet.RandIdentityOrFatal(t)
-	id2 := tnet.RandIdentityOrFatal(t)
-	id3 := tnet.RandIdentityOrFatal(t)
+	priv1, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
+	priv2, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
+	priv3, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	require.NoError(t, err)
 	mn := New()
 	defer mn.Close()
 
 	// add peers to mock net
 
-	a1 := tnet.RandLocalTCPAddress()
-	a2 := tnet.RandLocalTCPAddress()
-	a3 := tnet.RandLocalTCPAddress()
+	a1 := randLocalTCPAddress()
+	a2 := randLocalTCPAddress()
+	a3 := randLocalTCPAddress()
 
-	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
+	h1, err := mn.AddPeer(priv1, a1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p1 := h1.ID()
 
-	h2, err := mn.AddPeer(id2.PrivateKey(), a2)
+	h2, err := mn.AddPeer(priv2, a2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p2 := h2.ID()
 
-	h3, err := mn.AddPeer(id3.PrivateKey(), a3)
+	h3, err := mn.AddPeer(priv3, a3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,10 +352,12 @@ func TestAdding(t *testing.T) {
 
 	var peers []peer.ID
 	for i := 0; i < 3; i++ {
-		id := tnet.RandIdentityOrFatal(t)
-
-		a := tnet.RandLocalTCPAddress()
-		h, err := mn.AddPeer(id.PrivateKey(), a)
+		priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := randLocalTCPAddress()
+		h, err := mn.AddPeer(priv, a)
 		if err != nil {
 			t.Fatal(err)
 		}

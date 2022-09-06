@@ -9,20 +9,19 @@ import (
 	"testing"
 	"time"
 
-	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
-
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
 	"github.com/stretchr/testify/require"
 )
 
-func makeRcmgrOption(t *testing.T, cfg rcmgr.LimitConfig, test string) func(int) libp2p.Option {
+func makeRcmgrOption(t *testing.T, cfg rcmgr.LimitConfig) func(int) libp2p.Option {
 	return func(i int) libp2p.Option {
 		var opts []rcmgr.Option
 		if os.Getenv("LIBP2P_TEST_RCMGR_TRACE") == "1" {
-			opts = append(opts, rcmgr.WithTrace(fmt.Sprintf("%s-%d.json.gz", test, i)))
+			opts = append(opts, rcmgr.WithTrace(fmt.Sprintf("%s-%d.json.gz", t.Name(), i)))
 		}
 
 		mgr, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(cfg), opts...)
@@ -55,7 +54,7 @@ func TestResourceManagerConnInbound(t *testing.T) {
 	cfg.PeerDefault.ConnsInbound = 1
 	cfg.PeerDefault.ConnsOutbound = 1
 
-	echos := createEchos(t, 5, makeRcmgrOption(t, cfg, "TestResourceManagerConnInbound"))
+	echos := createEchos(t, 5, makeRcmgrOption(t, cfg))
 	defer closeEchos(echos)
 	defer closeRcmgrs(echos)
 
@@ -90,7 +89,7 @@ func TestResourceManagerConnOutbound(t *testing.T) {
 	cfg.PeerDefault.Conns = 1
 	cfg.PeerDefault.ConnsInbound = 1
 	cfg.PeerDefault.ConnsOutbound = 1
-	echos := createEchos(t, 5, makeRcmgrOption(t, cfg, "TestResourceManagerConnOutbound"))
+	echos := createEchos(t, 5, makeRcmgrOption(t, cfg))
 	defer closeEchos(echos)
 	defer closeRcmgrs(echos)
 
@@ -122,7 +121,7 @@ func TestResourceManagerServiceInbound(t *testing.T) {
 	cfg.ServiceDefault.StreamsInbound = 3
 	cfg.ServiceDefault.StreamsOutbound = 1024
 	cfg.ServiceDefault.Streams = 1024
-	echos := createEchos(t, 5, makeRcmgrOption(t, cfg, "TestResourceManagerServiceInbound"))
+	echos := createEchos(t, 5, makeRcmgrOption(t, cfg))
 	defer closeEchos(echos)
 	defer closeRcmgrs(echos)
 
@@ -179,7 +178,7 @@ func TestResourceManagerServicePeerInbound(t *testing.T) {
 	)
 	limits := cfg.AutoScale()
 
-	echos := createEchos(t, 5, makeRcmgrOption(t, limits, "TestResourceManagerServicePeerInbound"))
+	echos := createEchos(t, 5, makeRcmgrOption(t, limits))
 	defer closeEchos(echos)
 	defer closeRcmgrs(echos)
 

@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"sync"
 	"testing"
 
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/transport"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/transport"
 
 	ma "github.com/multiformats/go-multiaddr"
 )
@@ -85,7 +85,7 @@ func SubtestBasic(t *testing.T, ta, tb transport.Transport, maddr ma.Multiaddr, 
 			return
 		}
 
-		buf, err := ioutil.ReadAll(s)
+		buf, err := io.ReadAll(s)
 		if err != nil {
 			t.Error(err)
 			return
@@ -141,7 +141,7 @@ func SubtestBasic(t *testing.T, ta, tb transport.Transport, maddr ma.Multiaddr, 
 		return
 	}
 
-	buf, err := ioutil.ReadAll(s)
+	buf, err := io.ReadAll(s)
 	if err != nil {
 		t.Fatal(err)
 		return
@@ -204,7 +204,7 @@ func SubtestPingPong(t *testing.T, ta, tb transport.Transport, maddr ma.Multiadd
 			go func() {
 				defer sWg.Done()
 
-				data, err := ioutil.ReadAll(s)
+				data, err := io.ReadAll(s)
 				if err != nil {
 					s.Reset()
 					t.Error(err)
@@ -269,7 +269,7 @@ func SubtestPingPong(t *testing.T, ta, tb transport.Transport, maddr ma.Multiadd
 				return
 			}
 
-			ret, err := ioutil.ReadAll(s)
+			ret, err := io.ReadAll(s)
 			if err != nil {
 				s.Reset()
 				t.Error(err)

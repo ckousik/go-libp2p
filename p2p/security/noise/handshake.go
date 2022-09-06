@@ -10,17 +10,16 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/minio/sha256-simd"
 	"golang.org/x/crypto/chacha20poly1305"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/security/noise/pb"
-
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
 
 	"github.com/flynn/noise"
 	"github.com/gogo/protobuf/proto"
 	pool "github.com/libp2p/go-buffer-pool"
+	"github.com/minio/sha256-simd"
 )
 
 // payloadSigPrefix is prepended to our Noise static key before signing with
@@ -89,10 +88,12 @@ func (s *secureSession) runHandshake(ctx context.Context) (err error) {
 
 	if s.initiator {
 		// stage 0 //
-		// do not send the payload just yet, as it would be plaintext; not secret.
 		// Handshake Msg Len = len(DH ephemeral key)
-		err = s.sendHandshakeMessage(hs, nil, hbuf)
-		if err != nil {
+		var ed []byte
+		if s.earlyDataHandler != nil {
+			ed = s.earlyDataHandler.Send(ctx, s.insecureConn, s.remoteID)
+		}
+		if err := s.sendHandshakeMessage(hs, ed, hbuf); err != nil {
 			return fmt.Errorf("error sending handshake message: %w", err)
 		}
 
@@ -101,29 +102,34 @@ func (s *secureSession) runHandshake(ctx context.Context) (err error) {
 		if err != nil {
 			return fmt.Errorf("error reading handshake message: %w", err)
 		}
-		err = s.handleRemoteHandshakePayload(plaintext, hs.PeerStatic())
-		if err != nil {
+		if err := s.handleRemoteHandshakePayload(plaintext, hs.PeerStatic()); err != nil {
 			return err
 		}
 
 		// stage 2 //
 		// Handshake Msg Len = len(DHT static key) +  MAC(static key is encrypted) + len(Payload) + MAC(payload is encrypted)
-		err = s.sendHandshakeMessage(hs, payload, hbuf)
-		if err != nil {
+		if err := s.sendHandshakeMessage(hs, payload, hbuf); err != nil {
 			return fmt.Errorf("error sending handshake message: %w", err)
 		}
+		return nil
 	} else {
 		// stage 0 //
-		// We don't expect any payload on the first message.
-		if _, err := s.readHandshakeMessage(hs); err != nil {
+		initialPayload, err := s.readHandshakeMessage(hs)
+		if err != nil {
 			return fmt.Errorf("error reading handshake message: %w", err)
+		}
+		if s.earlyDataHandler != nil {
+			if err := s.earlyDataHandler.Received(ctx, s.insecureConn, initialPayload); err != nil {
+				return err
+			}
+		} else if len(initialPayload) > 0 {
+			return fmt.Errorf("received unexpected early data (%d bytes)", len(initialPayload))
 		}
 
 		// stage 1 //
 		// Handshake Msg Len = len(DH ephemeral key) + len(DHT static key) +  MAC(static key is encrypted) + len(Payload) +
 		// MAC(payload is encrypted)
-		err = s.sendHandshakeMessage(hs, payload, hbuf)
-		if err != nil {
+		if err := s.sendHandshakeMessage(hs, payload, hbuf); err != nil {
 			return fmt.Errorf("error sending handshake message: %w", err)
 		}
 
@@ -132,13 +138,8 @@ func (s *secureSession) runHandshake(ctx context.Context) (err error) {
 		if err != nil {
 			return fmt.Errorf("error reading handshake message: %w", err)
 		}
-		err = s.handleRemoteHandshakePayload(plaintext, hs.PeerStatic())
-		if err != nil {
-			return err
-		}
+		return s.handleRemoteHandshakePayload(plaintext, hs.PeerStatic())
 	}
-
-	return nil
 }
 
 // setCipherStates sets the initial cipher states that will be used to protect

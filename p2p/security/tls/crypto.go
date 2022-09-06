@@ -18,8 +18,8 @@ import (
 
 	"golang.org/x/sys/cpu"
 
-	ic "github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
+	ic "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 const certValidityPeriod = 100 * 365 * 24 * time.Hour // ~100 years

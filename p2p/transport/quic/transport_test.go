@@ -11,13 +11,12 @@ import (
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
-	ic "github.com/libp2p/go-libp2p-core/crypto"
-	tpt "github.com/libp2p/go-libp2p-core/transport"
-	ma "github.com/multiformats/go-multiaddr"
+	ic "github.com/libp2p/go-libp2p/core/crypto"
+	tpt "github.com/libp2p/go-libp2p/core/transport"
 
 	"github.com/lucas-clemente/quic-go"
+	ma "github.com/multiformats/go-multiaddr"
+	"github.com/stretchr/testify/require"
 )
 
 func getTransport(t *testing.T) tpt.Transport {

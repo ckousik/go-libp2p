@@ -7,14 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/benbjohnson/clock"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	tu "github.com/libp2p/go-libp2p/core/test"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-
-	tu "github.com/libp2p/go-libp2p-core/test"
 	ma "github.com/multiformats/go-multiaddr"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,6 +39,15 @@ func (c *tconn) isClosed() bool {
 
 func (c *tconn) RemotePeer() peer.ID {
 	return c.peer
+}
+
+func (c *tconn) Stat() network.ConnStats {
+	return network.ConnStats{
+		Stats: network.Stats{
+			Direction: network.DirOutbound,
+		},
+		NumStreams: 1,
+	}
 }
 
 func (c *tconn) RemoteMultiaddr() ma.Multiaddr {
@@ -404,7 +412,8 @@ func TestDisconnected(t *testing.T) {
 
 func TestGracePeriod(t *testing.T) {
 	const gp = 100 * time.Millisecond
-	cm, err := NewConnManager(10, 20, WithGracePeriod(gp), WithSilencePeriod(time.Hour))
+	mockClock := clock.NewMock()
+	cm, err := NewConnManager(10, 20, WithGracePeriod(gp), WithSilencePeriod(time.Hour), WithClock(mockClock))
 	require.NoError(t, err)
 	defer cm.Close()
 
@@ -418,7 +427,7 @@ func TestGracePeriod(t *testing.T) {
 		conns = append(conns, rc)
 		not.Connected(nil, rc)
 
-		time.Sleep(2 * gp)
+		mockClock.Add(2 * gp)
 
 		if rc.(*tconn).isClosed() {
 			t.Fatal("expected conn to remain open")
@@ -440,7 +449,7 @@ func TestGracePeriod(t *testing.T) {
 		}
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	mockClock.Add(200 * time.Millisecond)
 
 	cm.TrimOpenConns(context.Background())
 
@@ -458,7 +467,8 @@ func TestGracePeriod(t *testing.T) {
 
 // see https://github.com/libp2p/go-libp2p-connmgr/issues/23
 func TestQuickBurstRespectsSilencePeriod(t *testing.T) {
-	cm, err := NewConnManager(10, 20, WithGracePeriod(0))
+	mockClock := clock.NewMock()
+	cm, err := NewConnManager(10, 20, WithGracePeriod(0), WithClock(mockClock))
 	require.NoError(t, err)
 	defer cm.Close()
 	not := cm.Notifee()
@@ -473,7 +483,7 @@ func TestQuickBurstRespectsSilencePeriod(t *testing.T) {
 	}
 
 	// wait for a few seconds
-	time.Sleep(time.Second * 3)
+	mockClock.Add(3 * time.Second)
 
 	// only the first trim is allowed in; make sure we close at most 20 connections, not all of them.
 	var closed int
@@ -802,7 +812,7 @@ func TestPeerInfoSorting(t *testing.T) {
 		p1 := peerInfo{id: peer.ID("peer1")}
 		p2 := peerInfo{id: peer.ID("peer2"), temp: true}
 		pis := peerInfos{p1, p2}
-		pis.SortByValue()
+		pis.SortByValueAndStreams(false)
 		require.Equal(t, pis, peerInfos{p2, p1})
 	})
 
@@ -810,31 +820,67 @@ func TestPeerInfoSorting(t *testing.T) {
 		p1 := peerInfo{id: peer.ID("peer1"), value: 40}
 		p2 := peerInfo{id: peer.ID("peer2"), value: 20}
 		pis := peerInfos{p1, p2}
-		pis.SortByValue()
+		pis.SortByValueAndStreams(false)
 		require.Equal(t, pis, peerInfos{p2, p1})
 	})
 
-	t.Run("in a memory emergency, starts with incoming connections", func(t *testing.T) {
+	t.Run("prefer peers with no streams", func(t *testing.T) {
+		p1 := peerInfo{id: peer.ID("peer1"),
+			conns: map[network.Conn]time.Time{
+				&mockConn{stats: network.ConnStats{NumStreams: 0}}: time.Now(),
+			},
+		}
+		p2 := peerInfo{id: peer.ID("peer2"),
+			conns: map[network.Conn]time.Time{
+				&mockConn{stats: network.ConnStats{NumStreams: 1}}: time.Now(),
+			},
+		}
+		pis := peerInfos{p2, p1}
+		pis.SortByValueAndStreams(false)
+		require.Equal(t, pis, peerInfos{p1, p2})
+	})
+
+	t.Run("in a memory emergency, starts with incoming connections and higher streams", func(t *testing.T) {
 		incoming := network.ConnStats{}
 		incoming.Direction = network.DirInbound
 		outgoing := network.ConnStats{}
 		outgoing.Direction = network.DirOutbound
+
+		outgoingSomeStreams := network.ConnStats{Stats: network.Stats{Direction: network.DirOutbound}, NumStreams: 1}
+		outgoingMoreStreams := network.ConnStats{Stats: network.Stats{Direction: network.DirOutbound}, NumStreams: 2}
 		p1 := peerInfo{
 			id: peer.ID("peer1"),
 			conns: map[network.Conn]time.Time{
-				&mockConn{stats: outgoing}: time.Now(),
+				&mockConn{stats: outgoingSomeStreams}: time.Now(),
 			},
 		}
 		p2 := peerInfo{
 			id: peer.ID("peer2"),
 			conns: map[network.Conn]time.Time{
+				&mockConn{stats: outgoingSomeStreams}: time.Now(),
+				&mockConn{stats: incoming}:            time.Now(),
+			},
+		}
+		p3 := peerInfo{
+			id: peer.ID("peer3"),
+			conns: map[network.Conn]time.Time{
 				&mockConn{stats: outgoing}: time.Now(),
 				&mockConn{stats: incoming}: time.Now(),
 			},
 		}
-		pis := peerInfos{p1, p2}
-		pis.SortByValueAndStreams()
-		require.Equal(t, pis, peerInfos{p2, p1})
+		p4 := peerInfo{
+			id: peer.ID("peer4"),
+			conns: map[network.Conn]time.Time{
+				&mockConn{stats: outgoingMoreStreams}: time.Now(),
+				&mockConn{stats: incoming}:            time.Now(),
+			},
+		}
+		pis := peerInfos{p1, p2, p3, p4}
+		pis.SortByValueAndStreams(true)
+		// p3 is first because it is inactive (no streams).
+		// p4 is second because it has the most streams and we priortize killing
+		// connections with the higher number of streams.
+		require.Equal(t, pis, peerInfos{p3, p4, p2, p1})
 	})
 
 	t.Run("in a memory emergency, starts with connections that have many streams", func(t *testing.T) {
@@ -852,7 +898,7 @@ func TestPeerInfoSorting(t *testing.T) {
 			},
 		}
 		pis := peerInfos{p1, p2}
-		pis.SortByValueAndStreams()
+		pis.SortByValueAndStreams(true)
 		require.Equal(t, pis, peerInfos{p2, p1})
 	})
 }

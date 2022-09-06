@@ -3,14 +3,15 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 
-	ic "github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
-	tpt "github.com/libp2p/go-libp2p-core/transport"
+	ic "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	tpt "github.com/libp2p/go-libp2p/core/transport"
 	libp2pquic "github.com/libp2p/go-libp2p/p2p/transport/quic"
+
 	ma "github.com/multiformats/go-multiaddr"
 )
 
@@ -67,7 +68,7 @@ func handleConn(conn tpt.CapableConn) error {
 	if err != nil {
 		return err
 	}
-	data, err := ioutil.ReadAll(str)
+	data, err := io.ReadAll(str)
 	if err != nil {
 		return err
 	}

@@ -7,13 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/libp2p/go-libp2p/core/connmgr"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/transport"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
-
-	"github.com/libp2p/go-libp2p-core/connmgr"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/transport"
 
 	"github.com/stretchr/testify/require"
 )
@@ -93,15 +92,17 @@ func TestAutoNATService(t *testing.T) {
 }
 
 func TestDefaultListenAddrs(t *testing.T) {
-	re := regexp.MustCompile("/(ip)[4|6]/((0.0.0.0)|(::))/tcp/")
-	re2 := regexp.MustCompile("/p2p-circuit")
+	reTCP := regexp.MustCompile("/(ip)[4|6]/((0.0.0.0)|(::))/tcp/")
+	reQUIC := regexp.MustCompile("/(ip)[4|6]/((0.0.0.0)|(::))/udp/([0-9]*)/quic")
+	reCircuit := regexp.MustCompile("/p2p-circuit")
 
 	// Test 1: Setting the correct listen addresses if userDefined.Transport == nil && userDefined.ListenAddrs == nil
 	h, err := New()
 	require.NoError(t, err)
 	for _, addr := range h.Network().ListenAddresses() {
-		if re.FindStringSubmatchIndex(addr.String()) == nil &&
-			re2.FindStringSubmatchIndex(addr.String()) == nil {
+		if reTCP.FindStringSubmatchIndex(addr.String()) == nil &&
+			reQUIC.FindStringSubmatchIndex(addr.String()) == nil &&
+			reCircuit.FindStringSubmatchIndex(addr.String()) == nil {
 			t.Error("expected ip4 or ip6 or relay interface")
 		}
 	}
@@ -115,7 +116,7 @@ func TestDefaultListenAddrs(t *testing.T) {
 	if len(h.Network().ListenAddresses()) != 1 {
 		t.Error("expected one listen addr with user defined transport")
 	}
-	if re2.FindStringSubmatchIndex(h.Network().ListenAddresses()[0].String()) == nil {
+	if reCircuit.FindStringSubmatchIndex(h.Network().ListenAddresses()[0].String()) == nil {
 		t.Error("expected relay address")
 	}
 	h.Close()

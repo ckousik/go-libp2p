@@ -4,28 +4,25 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/event"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/core/record"
+	"github.com/libp2p/go-libp2p/core/test"
 	"github.com/libp2p/go-libp2p/p2p/host/autonat"
+	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	swarmt "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
 	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 
-	"github.com/libp2p/go-libp2p-core/event"
-	"github.com/libp2p/go-libp2p-core/helpers"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/peerstore"
-	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/libp2p/go-libp2p-core/record"
-	"github.com/libp2p/go-libp2p-core/test"
-
-	"github.com/libp2p/go-eventbus"
 	ma "github.com/multiformats/go-multiaddr"
 	madns "github.com/multiformats/go-multiaddr-dns"
 
@@ -273,9 +270,6 @@ func assertWait(t *testing.T, c chan protocol.ID, exp protocol.ID) {
 }
 
 func TestHostProtoPreference(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	h1, h2 := getHostPair(t)
 	defer h1.Close()
 	defer h2.Close()
@@ -298,7 +292,7 @@ func TestHostProtoPreference(t *testing.T) {
 
 	h2.SetStreamHandler(protoOld, handler)
 
-	s, err := h1.NewStream(ctx, h2.ID(), protoMinor, protoNew, protoOld)
+	s, err := h1.NewStream(context.Background(), h2.ID(), protoMinor, protoNew, protoOld)
 	require.NoError(t, err)
 
 	// force the lazy negotiation to complete
@@ -308,12 +302,9 @@ func TestHostProtoPreference(t *testing.T) {
 	assertWait(t, connectedOn, protoOld)
 	s.Close()
 
-	mfunc, err := helpers.MultistreamSemverMatcher(protoMinor)
-	require.NoError(t, err)
-	h2.SetStreamHandlerMatch(protoMinor, mfunc, handler)
-
+	h2.SetStreamHandlerMatch(protoMinor, func(string) bool { return true }, handler)
 	// remembered preference will be chosen first, even when the other side newly supports it
-	s2, err := h1.NewStream(ctx, h2.ID(), protoMinor, protoNew, protoOld)
+	s2, err := h1.NewStream(context.Background(), h2.ID(), protoMinor, protoNew, protoOld)
 	require.NoError(t, err)
 
 	// required to force 'lazy' handshake
@@ -323,7 +314,7 @@ func TestHostProtoPreference(t *testing.T) {
 	assertWait(t, connectedOn, protoOld)
 	s2.Close()
 
-	s3, err := h1.NewStream(ctx, h2.ID(), protoMinor)
+	s3, err := h1.NewStream(context.Background(), h2.ID(), protoMinor)
 	require.NoError(t, err)
 
 	// Force a lazy handshake as we may have received a protocol update by this point.
@@ -490,7 +481,7 @@ func TestProtoDowngrade(t *testing.T) {
 	connectedOn := make(chan protocol.ID)
 	h2.SetStreamHandler("/testing/1.0.0", func(s network.Stream) {
 		defer s.Close()
-		result, err := ioutil.ReadAll(s)
+		result, err := io.ReadAll(s)
 		assert.NoError(t, err)
 		assert.Equal(t, string(result), "bar")
 		connectedOn <- s.Protocol()
@@ -511,7 +502,7 @@ func TestProtoDowngrade(t *testing.T) {
 	h2.RemoveStreamHandler("/testing/1.0.0")
 	h2.SetStreamHandler("/testing", func(s network.Stream) {
 		defer s.Close()
-		result, err := ioutil.ReadAll(s)
+		result, err := io.ReadAll(s)
 		assert.NoError(t, err)
 		assert.Equal(t, string(result), "foo")
 		connectedOn <- s.Protocol()

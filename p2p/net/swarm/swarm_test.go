@@ -11,22 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/protocol"
-
+	"github.com/libp2p/go-libp2p/core/control"
+	"github.com/libp2p/go-libp2p/core/network"
+	mocknetwork "github.com/libp2p/go-libp2p/core/network/mocks"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	. "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
 
-	"github.com/libp2p/go-libp2p-core/control"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/peerstore"
-
+	"github.com/golang/mock/gomock"
 	logging "github.com/ipfs/go-log/v2"
-	mocknetwork "github.com/libp2p/go-libp2p-testing/mocks/network"
 	ma "github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
-
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 )
 

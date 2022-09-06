@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/peerstore"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
 
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,9 @@ func createEchos(t *testing.T, count int, makeOpts ...func(int) libp2p.Option) [
 	result := make([]*Echo, 0, count)
 
 	for i := 0; i < count; i++ {
-		opts := make([]libp2p.Option, 0, len(makeOpts))
+		opts := make([]libp2p.Option, 0, len(makeOpts)+2)
+		// only use a single transport, otherwise we might end up with a TCP and a QUIC connection to the same host
+		opts = append(opts, libp2p.Transport(tcp.NewTCPTransport), libp2p.DefaultListenAddrs)
 		for _, makeOpt := range makeOpts {
 			opts = append(opts, makeOpt(i))
 		}

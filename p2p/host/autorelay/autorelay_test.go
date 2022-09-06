@@ -7,13 +7,12 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
 	relayv1 "github.com/libp2p/go-libp2p/p2p/protocol/circuitv1/relay"
 	circuitv2_proto "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/proto"
-
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
 
 	"github.com/benbjohnson/clock"
 	ma "github.com/multiformats/go-multiaddr"
@@ -400,8 +399,11 @@ func TestMaxAge(t *testing.T) {
 	require.Eventually(t, func() bool { return numRelays(h) > 0 }, 3*time.Second, 100*time.Millisecond)
 	relays := usedRelays(h)
 	require.Len(t, relays, 1)
-	cl.Add(time.Second)
-	require.Eventually(t, func() bool { return len(peerChans) == 0 }, time.Second, 100*time.Millisecond)
+	require.Eventually(t, func() bool {
+		// we don't know exactly when the timer is reset, just advance our timer multiple times if necessary
+		cl.Add(time.Second)
+		return len(peerChans) == 0
+	}, 500*time.Millisecond, 100*time.Millisecond)
 
 	cl.Add(10 * time.Minute)
 	for _, r := range relays2 {
