@@ -36,6 +36,7 @@ type dataChannel struct {
 
 	closeWriteOnce sync.Once
 	closeReadOnce  sync.Once
+	resetOnce      sync.Once
 
 	remoteWriteClosed atomic.Bool
 	localWriteClosed  atomic.Bool
@@ -106,6 +107,9 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 
 		case pb.Message_CLOSE_READ:
 			d.remoteReadClosed.Store(true)
+		case pb.Message_RESET:
+			log.Errorf("remote reset")
+			d.Close()
 		}
 	}
 
@@ -214,7 +218,20 @@ func (d *dataChannel) RemoteAddr() net.Addr {
 }
 
 func (d *dataChannel) Reset() error {
-	return d.Close()
+	var err error
+	d.resetOnce.Do(func() {
+		msg := &pb.Message{Flag: pb.Message_RESET.Enum()}
+		data, err := msg.Marshal()
+		if err != nil {
+			return
+		}
+		err = d.channel.Send(data)
+		if err != nil {
+			return
+		}
+		d.channel.Close()
+	})
+	return err
 }
 
 func (d *dataChannel) SetDeadline(t time.Time) error {
