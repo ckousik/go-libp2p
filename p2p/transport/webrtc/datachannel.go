@@ -14,7 +14,7 @@ import (
 
 	"sync/atomic"
 
-	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/pion/webrtc/v3"
 
 	pb "github.com/libp2p/go-libp2p/p2p/transport/webrtc/pb"
@@ -168,7 +168,7 @@ func (d *dataChannel) Close() error {
 
 func (d *dataChannel) CloseRead() error {
 	var err error
-	d.closeWriteOnce.Do(func() {
+	d.closeReadOnce.Do(func() {
 		d.localReadClosed.Store(true)
 		msg := &pb.Message{
 			Flag: pb.Message_CLOSE_READ.Enum(),
