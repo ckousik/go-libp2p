@@ -193,7 +193,7 @@ func (t *WebRTCTransport) Dial(
 	ufrag := uuid.New().String()
 
 	se := webrtc.SettingEngine{}
-	se.DetachDataChannels()
+	// se.DetachDataChannels()
 	se.SetICECredentials(ufrag, ufrag)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
 
@@ -218,12 +218,12 @@ func (t *WebRTCTransport) Dial(
 	opened := make(chan *dataChannel, 1)
 	errChan := make(chan error, 1)
 	dc.OnOpen(func() {
-		detached, err := dc.Detach()
-		if err != nil {
-			err = fmt.Errorf("could not detach datachannel: %v", err)
-			errChan <- err
-			return
-		}
+		// detached, err := dc.Detach()
+		// if err != nil {
+		// 	err = fmt.Errorf("could not detach datachannel: %v", err)
+		// 	errChan <- err
+		// 	return
+		// }
 		cp, err := dc.Transport().Transport().ICETransport().GetSelectedCandidatePair()
 		if cp == nil || err != nil {
 			err = fmt.Errorf("could not fetch selected candidate pair: %v", err)
@@ -232,7 +232,7 @@ func (t *WebRTCTransport) Dial(
 		}
 
 		laddr := &net.UDPAddr{IP: net.ParseIP(cp.Local.Address), Port: int(cp.Local.Port)}
-		opened <- newDataChannel(detached, dc, pc, laddr, raddr)
+		opened <- newDataChannel(dc, pc, laddr, raddr)
 	})
 
 	offer, err := pc.CreateOffer(nil)

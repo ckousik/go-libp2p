@@ -181,7 +181,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 
 	se := webrtc.SettingEngine{}
 	se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
-	se.DetachDataChannels()
+	// se.DetachDataChannels()
 	se.DisableCertificateFingerprintVerification(true)
 	se.SetICECredentials(addr.ufrag, localFingerprint)
 	se.SetLite(true)
@@ -247,12 +247,11 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	var handshakeOnce sync.Once
 	handshakeChannel.OnOpen(func() {
 		handshakeOnce.Do(func() {
-			detached, err := handshakeChannel.Detach()
-			if err != nil {
-				return
-			}
+			// detached, err := handshakeChannel.Detach()
+			// if err != nil {
+			// 	return
+			// }
 			dcChan <- newDataChannel(
-				detached,
 				handshakeChannel,
 				pc,
 				l.mux.LocalAddr(),
@@ -306,8 +305,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 
 	conn.setRemotePeer(secureConn.RemotePeer())
 	conn.setRemotePublicKey(secureConn.RemotePublicKey())
-
-	// defer func() { _ = dc.Close() }()
 
 	return conn, nil
 }
