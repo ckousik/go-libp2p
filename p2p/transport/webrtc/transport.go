@@ -33,7 +33,6 @@ import (
 
 var log = logging.Logger("webrtc-transport")
 
-
 var dialMatcher = mafmt.And(mafmt.IP, mafmt.Base(ma.P_UDP), mafmt.Base(ma.P_WEBRTC), mafmt.Base(ma.P_CERTHASH))
 
 type WebRTCTransport struct {
