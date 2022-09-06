@@ -76,21 +76,18 @@ func newConnection(
 
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		log.Debugf("[%s] incoming datachannel: %s", localPeer, dc.Label())
+		id := *dc.ID()
+		stream := newDataChannel(dc, pc, nil, nil)
 		dc.OnOpen(func() {
-			detached, err := dc.Detach()
-			if err != nil {
-				log.Warn("[%s] could not detach data channel: %s", localPeer, dc.Label())
-				return
-			}
-			stream := newDataChannel(detached, dc, pc, nil, nil)
-			conn.m.Lock()
-			conn.streams[*dc.ID()] = stream
-			conn.m.Unlock()
+			conn.addStream(id, stream)
 			accept <- stream
 		})
-		dc.SetBufferedAmountLowThreshold(0)
+
+		dc.OnClose(func() {
+			stream.remoteClosed()
+			conn.removeStream(id)
+		})
 	})
-	// log.Infof("localMultiaddr: %s", conn.localMultiaddr)
 	return conn, nil
 }
 
@@ -138,25 +135,18 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		network.MuxedStream
 		error
 	}, 1)
+	streamId := *dc.ID()
+	stream := newDataChannel(dc, c.pc, nil, nil)
 	dc.OnOpen(func() {
-		// log.Infof("[%s] opened new datachannel: %d, %s", c.localPeer, dc.ID(), dc.Label())
-		detached, err := dc.Detach()
-		if err != nil {
-			log.Warn("[%s] could not detach data channel: %s", c.localPeer, dc.Label())
-			result <- struct {
-				network.MuxedStream
-				error
-			}{nil, err}
-			return
-		}
-		stream := newDataChannel(detached, dc, c.pc, nil, nil)
-		c.m.Lock()
-		c.streams[*dc.ID()] = stream
-		c.m.Unlock()
+		c.addStream(streamId, stream)
 		result <- struct {
 			network.MuxedStream
 			error
 		}{stream, err}
+	})
+	dc.OnClose(func() {
+		stream.remoteClosed()
+		c.removeStream(streamId)
 	})
 
 	select {
@@ -219,4 +209,16 @@ func (c *connection) Scope() network.ConnScope {
 
 func (c *connection) Transport() tpt.Transport {
 	return c.transport
+}
+
+func (c *connection) addStream(id uint16, stream *dataChannel) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	c.streams[id] = stream
+}
+
+func (c *connection) removeStream(id uint16) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	delete(c.streams, id)
 }
