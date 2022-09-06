@@ -23,7 +23,6 @@ require (
 	github.com/libp2p/go-buffer-pool v0.1.0
 	github.com/libp2p/go-flow-metrics v0.1.0
 	github.com/libp2p/go-libp2p-asn-util v0.2.0
-	github.com/libp2p/go-libp2p-core v0.20.1
 	github.com/libp2p/go-libp2p-testing v0.12.0
 	github.com/libp2p/go-mplex v0.7.0
 	github.com/libp2p/go-msgio v0.2.0
@@ -49,7 +48,6 @@ require (
 	github.com/multiformats/go-multistream v0.3.3
 	github.com/multiformats/go-varint v0.0.6
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
-	github.com/pion/datachannel v1.5.2
 	github.com/pion/dtls/v2 v2.1.5
 	github.com/pion/ice/v2 v2.2.6
 	github.com/pion/logging v0.2.2
@@ -69,10 +67,6 @@ require (
 require (
 	github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/btcsuite/btcd v0.23.1 // indirect
-	github.com/btcsuite/btcd/btcec/v2 v2.2.1 // indirect
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1 // indirect
-	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/containerd/cgroups v1.0.4 // indirect
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
