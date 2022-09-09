@@ -335,7 +335,11 @@ func (t *WebRTCTransport) generateNoisePrologue(pc *webrtc.PeerConnection) ([]by
 	if err != nil {
 		return nil, err
 	}
-	remoteFp = strings.ToLower(remoteFp)
+	remoteFp = strings.ReplaceAll(strings.ToLower(remoteFp), ":", "")
+	remoteFpBytes, err := hex.DecodeString(remoteFp)
+	if err != nil {
+		return nil, err
+	}
 
 	mhAlgoName := sdpHashToMh(localFp.Algorithm)
 	if mhAlgoName == "" {
@@ -343,13 +347,17 @@ func (t *WebRTCTransport) generateNoisePrologue(pc *webrtc.PeerConnection) ([]by
 	}
 
 	local := strings.ReplaceAll(localFp.Value, ":", "")
-	remote := strings.ReplaceAll(remoteFp, ":", "")
-	localEncoded, err := multihash.EncodeName([]byte(local), mhAlgoName)
+	localBytes, err := hex.DecodeString(local)
+	if err != nil {
+		return nil, err
+	}
+
+	localEncoded, err := multihash.EncodeName(localBytes, mhAlgoName)
 	if err != nil {
 		log.Debugf("could not encode multihash for local fingerprint")
 		return nil, err
 	}
-	remoteEncoded, err := multihash.EncodeName([]byte(remote), mhAlgoName)
+	remoteEncoded, err := multihash.EncodeName(remoteFpBytes, mhAlgoName)
 	if err != nil {
 		log.Debugf("could not encode multihash for remote fingerprint")
 		return nil, err
