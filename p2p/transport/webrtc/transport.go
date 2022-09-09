@@ -52,7 +52,7 @@ func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*We
 	if err != nil {
 		return nil, fmt.Errorf("could not get local peer ID: %v", err)
 	}
-	pk, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	pk, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("could not generate rsa key for cert: %v", err)
 	}
@@ -195,6 +195,7 @@ func (t *WebRTCTransport) Dial(
 	se := webrtc.SettingEngine{}
 	// se.DetachDataChannels()
 	se.SetICECredentials(ufrag, ufrag)
+	se.SetLite(false)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
 
 	pc, err = api.NewPeerConnection(t.webrtcConfig)
