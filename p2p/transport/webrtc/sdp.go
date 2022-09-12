@@ -10,7 +10,6 @@ import (
 type sdpArgs struct {
 	Addr        *net.UDPAddr
 	Ufrag       string
-	Password    string
 	Fingerprint *multihash.DecodedMultihash
 }
 
@@ -44,7 +43,7 @@ func renderClientSdp(args sdpArgs) string {
 		args.Addr.IP,
 		args.Addr.Port,
 		args.Ufrag,
-		args.Password,
+		args.Ufrag,
 		fingerprintToSDP(args.Fingerprint),
 	)
 }
@@ -82,7 +81,7 @@ func renderServerSdp(args sdpArgs) string {
 		ipVersion,
 		args.Addr.IP,
 		args.Ufrag,
-		args.Password,
+		args.Ufrag,
 		fp,
 		args.Addr.IP,
 		args.Addr.Port,
