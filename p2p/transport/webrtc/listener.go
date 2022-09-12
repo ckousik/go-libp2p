@@ -175,7 +175,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
-	localFingerprint := strings.ReplaceAll(l.localFingerprint.Value, ":", "")
 	// signaling channel
 	signalChan := make(chan struct{})
 
@@ -183,7 +182,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	// se.DetachDataChannels()
 	se.DisableCertificateFingerprintVerification(true)
-	se.SetICECredentials(addr.ufrag, localFingerprint)
+	se.SetICECredentials(addr.ufrag, addr.ufrag)
 	se.SetLite(true)
 	se.SetICEUDPMux(l.mux)
 
@@ -193,7 +192,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		Addr:        addr.raddr,
 		Fingerprint: defaultMultihash,
 		Ufrag:       addr.ufrag,
-		Password:    addr.ufrag,
 	})
 	clientSdp := webrtc.SessionDescription{SDP: clientSdpString, Type: webrtc.SDPTypeOffer}
 	pc, err = api.NewPeerConnection(l.config)

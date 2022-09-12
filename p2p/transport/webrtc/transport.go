@@ -252,7 +252,6 @@ func (t *WebRTCTransport) Dial(
 		Addr:        raddr,
 		Fingerprint: remoteMultihash,
 		Ufrag:       ufrag,
-		Password:    hex.EncodeToString(remoteMultihash.Digest),
 	})
 
 	answer := webrtc.SessionDescription{SDP: answerSdpString, Type: webrtc.SDPTypeAnswer}
