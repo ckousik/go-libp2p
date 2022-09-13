@@ -3,7 +3,6 @@ package libp2pwebrtc
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -21,12 +20,6 @@ import (
 
 	"github.com/pion/ice/v2"
 	"github.com/pion/webrtc/v3"
-)
-
-var (
-	ErrDataChannelTimeout    = errors.New("timed out waiting for datachannel")
-	ErrNoiseHandshakeTimeout = errors.New("noise handshake timeout")
-	ErrNoCertInConfig        = errors.New("no certificate configured in listener config")
 )
 
 var (
@@ -68,7 +61,7 @@ type listener struct {
 }
 
 func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.PacketConn, config webrtc.Configuration) (*listener, error) {
-	mux := NewUDPMuxNewAddr(ice.UDPMuxParams{UDPConn: socket}, make(chan candidateAddr, 1))
+	mux := NewUDPMuxNewAddr(ice.UDPMuxParams{UDPConn: socket}, make(chan candidateAddr))
 	localFingerprints, err := config.Certificates[0].GetFingerprints()
 	if err != nil {
 		return nil, err
@@ -153,11 +146,15 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	var (
 		scope network.ConnManagementScope
 		pc    *webrtc.PeerConnection
+		dc    *dataChannel
 	)
 
 	cleanup := func() {
 		if scope != nil {
 			scope.Done()
+		}
+		if dc != nil {
+			_ = dc.Close()
 		}
 		if pc != nil {
 			_ = pc.Close()
@@ -175,18 +172,64 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
-	// signaling channel
-	signalChan := make(chan struct{})
+	// signaling channel wraps an error in a struct to make
+	// the error nullable.
 
 	se := webrtc.SettingEngine{}
 	se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
-	// se.DetachDataChannels()
-	se.DisableCertificateFingerprintVerification(true)
 	se.SetICECredentials(addr.ufrag, addr.ufrag)
 	se.SetLite(true)
 	se.SetICEUDPMux(l.mux)
+	se.DisableCertificateFingerprintVerification(true)
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
+
+	pc, err = api.NewPeerConnection(l.config)
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
+	signalChan := make(chan struct{ error })
+	dcChan := make(chan *dataChannel)
+	var connectedOnce sync.Once
+	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		switch state {
+		case webrtc.PeerConnectionStateConnected:
+			connectedOnce.Do(func() { signalChan <- struct{ error }{nil} })
+		case webrtc.PeerConnectionStateFailed:
+			connectedOnce.Do(func() { signalChan <- struct{ error }{fmt.Errorf("peerconnection failed to connect")} })
+		}
+	})
+
+	// this enforces that the correct data channel label is used
+	// for the handshake
+	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
+		Negotiated: func(v bool) *bool { return &v }(true),
+		ID:         func(v uint16) *uint16 { return &v }(1),
+	})
+	if err != nil {
+		defer cleanup()
+		return nil, err
+	}
+
+	var handshakeOnce sync.Once
+	handshakeChannel.OnOpen(func() {
+		handshakeOnce.Do(func() {
+			dcChan <- newDataChannel(
+				handshakeChannel,
+				pc,
+				l.mux.LocalAddr(),
+				addr.raddr,
+			)
+		})
+	})
+	handshakeChannel.OnError(func(e error) {
+		handshakeOnce.Do(func() {
+			signalChan <- struct{ error }{e}
+
+		})
+	})
 
 	clientSdpString := renderClientSdp(sdpArgs{
 		Addr:        addr.raddr,
@@ -194,19 +237,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		Ufrag:       addr.ufrag,
 	})
 	clientSdp := webrtc.SessionDescription{SDP: clientSdpString, Type: webrtc.SDPTypeOffer}
-	pc, err = api.NewPeerConnection(l.config)
-	if err != nil {
-		defer cleanup()
-		return nil, err
-	}
-
-	var connectedOnce sync.Once
-	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		if state == webrtc.PeerConnectionStateConnected {
-			connectedOnce.Do(func() { signalChan <- struct{}{} })
-		}
-	})
-
 	pc.SetRemoteDescription(clientSdp)
 
 	answer, err := pc.CreateAnswer(nil)
@@ -223,42 +253,18 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 
 	// await peerconnection connected state
 	select {
-	case <-signalChan:
+	case s := <-signalChan:
+		if s.error != nil {
+			log.Debug("peerconnection error", err)
+			defer cleanup()
+			return nil, err
+		}
 	case <-ctx.Done():
 		defer cleanup()
 		return nil, ctx.Err()
 	}
 
-	// await openening of datachannel
-	dcChan := make(chan *dataChannel)
-	// this enforces that the correct data channel label is used
-	// for the handshake
-	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
-		Negotiated: func(v bool) *bool { return &v }(true),
-		ID:         func(v uint16) *uint16 { return &v }(1),
-	})
-	if err != nil {
-		defer cleanup()
-		return nil, err
-	}
-
-	var handshakeOnce sync.Once
-	handshakeChannel.OnOpen(func() {
-		handshakeOnce.Do(func() {
-			// detached, err := handshakeChannel.Detach()
-			// if err != nil {
-			// 	return
-			// }
-			dcChan <- newDataChannel(
-				handshakeChannel,
-				pc,
-				l.mux.LocalAddr(),
-				addr.raddr,
-			)
-		})
-	})
-
-	var dc *dataChannel
+	// await opening of datachannel
 	select {
 	case <-ctx.Done():
 		defer cleanup()
@@ -266,6 +272,13 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	case dc = <-dcChan:
 		if dc == nil {
 			defer cleanup()
+			return nil, fmt.Errorf("should be unreachable")
+		}
+	case s := <-signalChan:
+		if s.error != nil {
+			log.Debugf("datachannel: ", s.error)
+			return nil, errDatachannel("datachannel error", s.error)
+		} else {
 			return nil, fmt.Errorf("should be unreachable")
 		}
 	}

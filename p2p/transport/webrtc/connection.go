@@ -51,7 +51,7 @@ func newConnection(
 	remoteKey ic.PubKey,
 	remoteMultiaddr ma.Multiaddr,
 ) (*connection, error) {
-	accept := make(chan network.MuxedStream, 10)
+	accept := make(chan network.MuxedStream)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

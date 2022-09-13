@@ -61,7 +61,7 @@ func NewUDPMuxNewAddr(params ice.UDPMuxParams, newAddrChan chan candidateAddr) *
 		params:     params,
 		connsIPv4:  make(map[string]*udpMuxedConn),
 		connsIPv6:  make(map[string]*udpMuxedConn),
-		closedChan: make(chan struct{}, 1),
+		closedChan: make(chan struct{}),
 		pool: &sync.Pool{
 			New: func() interface{} {
 				// big enough buffer to fit both packet and address
@@ -294,7 +294,7 @@ func (m *udpMuxNewAddr) connWorker() {
 
 			// notify that a new connection is requested
 			if !ok {
-				log.Debugf("new connection requested: %v %v", udpAddr, ufrag)
+				// log.Debugf("new connection requested: %v %v", udpAddr, ufrag)
 				m.newAddrChan <- candidateAddr{raddr: udpAddr, ufrag: ufrag}
 				m.mu.Lock()
 				m.newAddrs[udpAddr] = struct{}{}

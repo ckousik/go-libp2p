@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	tpt "github.com/libp2p/go-libp2p/core/transport"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multibase"
+	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,7 +78,6 @@ func TestTransportWebRTC_CanListenSingle(t *testing.T) {
 	tr1, connectingPeer := getTransport(t)
 
 	go func() {
-		t.Logf("dialing: %s", listener.Multiaddr())
 		_, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
 	}()
@@ -89,29 +89,32 @@ func TestTransportWebRTC_CanListenSingle(t *testing.T) {
 	require.Equal(t, connectingPeer, conn.RemotePeer())
 }
 
-func TestTransportWebRTCCanListenMultiple(t *testing.T) {
+func TestTransportWebRTC_CanListenMultiple(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
+	count := 10
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < count; i++ {
 		go func() {
 			ctr, _ := getTransport(t)
 			conn, err := ctr.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 			require.NoError(t, err)
 			require.Equal(t, conn.RemotePeer(), listeningPeer)
 		}()
+		// time.Sleep(50 * time.Millisecond)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < count; i++ {
 		_, err := listener.Accept()
 		require.NoError(t, err)
+		t.Logf("accepted connection: %d", i)
 	}
 }
 
-func TestTransportWebRTCListenerCanCreateStreams(t *testing.T) {
+func TestTransportWebRTC_ListenerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
@@ -142,7 +145,7 @@ func TestTransportWebRTCListenerCanCreateStreams(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestTransportWebRTCDialerCanCreateStreams(t *testing.T) {
+func TestTransportWebRTC_DialerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
@@ -154,7 +157,6 @@ func TestTransportWebRTCDialerCanCreateStreams(t *testing.T) {
 	go func() {
 		conn, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
-		time.Sleep(100 * time.Millisecond)
 		stream, err := conn.OpenStream(context.Background())
 		require.NoError(t, err)
 		_, err = stream.Write([]byte("test"))
@@ -171,4 +173,37 @@ func TestTransportWebRTCDialerCanCreateStreams(t *testing.T) {
 	n, err := stream.Read(buf)
 	require.NoError(t, err)
 	require.Equal(t, "test", string(buf[:n]))
+}
+
+func TestTransportWebRTC_PeerConnectionDTLSFailed(t *testing.T) {
+	tr, listeningPeer := getTransport(t)
+	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
+	require.NoError(t, err)
+	listener, err := tr.Listen(listenMultiaddr)
+	require.NoError(t, err)
+
+	tr1, _ := getTransport(t)
+
+	go func() {
+		listener.Accept()
+	}()
+
+	badMultiaddr, _ := multiaddr.SplitFunc(listener.Multiaddr(), func(component multiaddr.Component) bool {
+		return component.Protocol().Code == multiaddr.P_CERTHASH
+	})
+	encodedCerthash, err := multihash.Encode(defaultMultihash.Digest, defaultMultihash.Code)
+	require.NoError(t, err)
+	badEncodedCerthash, err := multibase.Encode(multibase.Base58BTC, encodedCerthash)
+	require.NoError(t, err)
+	badCerthash, err := multiaddr.NewMultiaddr(fmt.Sprintf("/certhash/%s", badEncodedCerthash))
+	require.NoError(t, err)
+	badMultiaddr = badMultiaddr.Encapsulate(badCerthash)
+
+	_, err = tr1.Dial(context.Background(), badMultiaddr, listeningPeer)
+	require.Error(t, err)
+	webrtcErr, ok := err.(*webRTCTransportError)
+	require.True(t, ok, "could not cast to webRTCTransportError")
+	require.Equal(t, webrtcErr.kind, errKindConnectionFailed)
+	require.Contains(t, webrtcErr.message, "failed")
+
 }

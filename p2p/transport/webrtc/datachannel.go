@@ -75,9 +75,8 @@ func newDataChannel(
 }
 
 func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
-	d.m.Lock()
-	defer d.m.Unlock()
 	if msg.IsString {
+		log.Warnf("received string message")
 		return
 	}
 
@@ -88,7 +87,11 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 	}
 
 	if !d.isRemoteWriteClosed() && !d.isLocalReadClosed() {
+		d.m.Lock()
 		d.readBuf.Write(pbmsg.GetMessage())
+		// n, err := d.readBuf.Write(pbmsg.GetMessage())
+		// log.Warnf("wrote %d bytes to buffer, msg size: %d: %v", n, len(pbmsg.GetMessage()), err)
+		d.m.Unlock()
 		select {
 		case d.readSignal <- struct{}{}:
 		default:
@@ -117,6 +120,11 @@ func (d *dataChannel) handleMessage(msg webrtc.DataChannelMessage) {
 
 func (d *dataChannel) Read(b []byte) (int, error) {
 	for {
+		select {
+		case <-d.readDeadline.wait():
+			return 0, os.ErrDeadlineExceeded
+		default:
+		}
 
 		d.m.Lock()
 		read, err := d.readBuf.Read(b)
@@ -129,6 +137,7 @@ func (d *dataChannel) Read(b []byte) (int, error) {
 			return read, nil
 		}
 
+		// log.Warnf("waiting for read")
 		select {
 		case <-d.readSignal:
 		case <-d.ctx.Done():
@@ -143,11 +152,17 @@ func (d *dataChannel) Write(b []byte) (int, error) {
 	if d.isLocalWriteClosed() || d.isRemoteReadClosed() {
 		return 0, io.ErrClosedPipe
 	}
+	select {
+	case <-d.writeDeadline.wait():
+		return 0, os.ErrDeadlineExceeded
+	default:
+	}
 	msg := &pb.Message{
 		Message: b,
 	}
 	data, err := msg.Marshal()
 	if err != nil {
+		log.Warnf("write failed on datachannel: %s", err)
 		return 0, err
 	}
 	d.channel.Send(data)
