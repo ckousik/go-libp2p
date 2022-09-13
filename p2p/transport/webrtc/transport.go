@@ -230,6 +230,7 @@ func (t *WebRTCTransport) Dial(
 		case webrtc.PeerConnectionStateFailed:
 			connectedOnce.Do(func() {
 				err := errConnectionFailed("peerconnection move to failed state", nil)
+				// log.Warn(err)
 				signalChan <- struct{ error }{err}
 			})
 		}
@@ -275,7 +276,7 @@ func (t *WebRTCTransport) Dial(
 	select {
 	case s := <-signalChan:
 		if s.error != nil {
-			return nil, err
+			return nil, s.error
 		}
 	case <-ctx.Done():
 		scope.Done()

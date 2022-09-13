@@ -13,7 +13,7 @@ type sdpArgs struct {
 	Fingerprint *multihash.DecodedMultihash
 }
 
-const CLIENT_SDP string = `
+const clientSDP string = `
 v=0
 o=- 0 0 IN %s %s
 s=-
@@ -36,7 +36,7 @@ func renderClientSdp(args sdpArgs) string {
 		ipVersion = "IP6"
 	}
 	return fmt.Sprintf(
-		CLIENT_SDP,
+		clientSDP,
 		ipVersion,
 		args.Addr.IP,
 		ipVersion,
@@ -48,7 +48,7 @@ func renderClientSdp(args sdpArgs) string {
 	)
 }
 
-const SERVER_SDP string = `
+const serverSDP string = `
 v=0
 o=- 0 0 IN %s %s
 s=-
@@ -74,7 +74,7 @@ func renderServerSdp(args sdpArgs) string {
 	}
 	fp := fingerprintToSDP(args.Fingerprint)
 	return fmt.Sprintf(
-		SERVER_SDP,
+		serverSDP,
 		ipVersion,
 		args.Addr.IP,
 		args.Addr.Port,

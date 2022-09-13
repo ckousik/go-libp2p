@@ -191,6 +191,7 @@ func TestTransportWebRTC_PeerConnectionDTLSFailed(t *testing.T) {
 	badMultiaddr, _ := multiaddr.SplitFunc(listener.Multiaddr(), func(component multiaddr.Component) bool {
 		return component.Protocol().Code == multiaddr.P_CERTHASH
 	})
+
 	encodedCerthash, err := multihash.Encode(defaultMultihash.Digest, defaultMultihash.Code)
 	require.NoError(t, err)
 	badEncodedCerthash, err := multibase.Encode(multibase.Base58BTC, encodedCerthash)
@@ -199,8 +200,10 @@ func TestTransportWebRTC_PeerConnectionDTLSFailed(t *testing.T) {
 	require.NoError(t, err)
 	badMultiaddr = badMultiaddr.Encapsulate(badCerthash)
 
-	_, err = tr1.Dial(context.Background(), badMultiaddr, listeningPeer)
+	conn, err := tr1.Dial(context.Background(), badMultiaddr, listeningPeer)
+	require.Nil(t, conn)
 	require.Error(t, err)
+
 	webrtcErr, ok := err.(*webRTCTransportError)
 	require.True(t, ok, "could not cast to webRTCTransportError")
 	require.Equal(t, webrtcErr.kind, errKindConnectionFailed)
