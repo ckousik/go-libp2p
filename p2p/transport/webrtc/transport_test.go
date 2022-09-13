@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -70,12 +71,11 @@ func TestTransportWebRTC_ListenFailsOnNonWebRTCMultiaddr(t *testing.T) {
 
 func TestTransportWebRTC_CanListenSingle(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
+	tr1, connectingPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
-
-	tr1, connectingPeer := getTransport(t)
 
 	go func() {
 		_, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
@@ -95,7 +95,7 @@ func TestTransportWebRTC_CanListenMultiple(t *testing.T) {
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
-	count := 10
+	count := 5
 
 	for i := 0; i < count; i++ {
 		go func() {
@@ -104,45 +104,57 @@ func TestTransportWebRTC_CanListenMultiple(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, conn.RemotePeer(), listeningPeer)
 		}()
-		// time.Sleep(50 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	for i := 0; i < count; i++ {
 		_, err := listener.Accept()
 		require.NoError(t, err)
-		t.Logf("accepted connection: %d", i)
+		t.Logf("listener accepted connection: %d", i)
 	}
 }
 
 func TestTransportWebRTC_ListenerCanCreateStreams(t *testing.T) {
 	tr, listeningPeer := getTransport(t)
+	tr1, connectingPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
 
-	tr1, connectingPeer := getTransport(t)
+	go func() {
+		conn, err := listener.Accept()
+		require.NoError(t, err)
 
+		require.Equal(t, connectingPeer, conn.RemotePeer())
+
+		stream, err := conn.OpenStream(context.Background())
+		require.NoError(t, err)
+		_, err = stream.Write([]byte("test"))
+		require.NoError(t, err)
+	}()
+
+	streamChan := make(chan network.MuxedStream)
 	go func() {
 		conn, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
 		stream, err := conn.AcceptStream()
 		require.NoError(t, err)
-		buf := make([]byte, 100)
-		n, err := stream.Read(buf)
-		require.NoError(t, err)
-		require.Equal(t, "test", string(buf[:n]))
+		streamChan <- stream
 	}()
 
-	conn, err := listener.Accept()
+	var stream network.MuxedStream
+	select {
+	case stream = <-streamChan:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream opening timed out")
+	}
+	buf := make([]byte, 100)
+	stream.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, err := stream.Read(buf)
 	require.NoError(t, err)
+	require.Equal(t, "test", string(buf[:n]))
 
-	require.Equal(t, connectingPeer, conn.RemotePeer())
-
-	stream, err := conn.OpenStream(context.Background())
-	require.NoError(t, err)
-	_, err = stream.Write([]byte("test"))
-	require.NoError(t, err)
 }
 
 func TestTransportWebRTC_DialerCanCreateStreams(t *testing.T) {
@@ -153,6 +165,22 @@ func TestTransportWebRTC_DialerCanCreateStreams(t *testing.T) {
 	require.NoError(t, err)
 
 	tr1, connectingPeer := getTransport(t)
+	done := make(chan struct{})
+
+	go func() {
+		lconn, err := listener.Accept()
+		require.NoError(t, err)
+		require.Equal(t, connectingPeer, lconn.RemotePeer())
+
+		stream, err := lconn.AcceptStream()
+		require.NoError(t, err)
+		buf := make([]byte, 100)
+		n, err := stream.Read(buf)
+		require.NoError(t, err)
+		require.Equal(t, "test", string(buf[:n]))
+
+		done <- struct{}{}
+	}()
 
 	go func() {
 		conn, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
@@ -161,18 +189,14 @@ func TestTransportWebRTC_DialerCanCreateStreams(t *testing.T) {
 		require.NoError(t, err)
 		_, err = stream.Write([]byte("test"))
 		require.NoError(t, err)
+
 	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out")
+	}
 
-	lconn, err := listener.Accept()
-	require.NoError(t, err)
-	require.Equal(t, connectingPeer, lconn.RemotePeer())
-
-	stream, err := lconn.AcceptStream()
-	require.NoError(t, err)
-	buf := make([]byte, 100)
-	n, err := stream.Read(buf)
-	require.NoError(t, err)
-	require.Equal(t, "test", string(buf[:n]))
 }
 
 func TestTransportWebRTC_PeerConnectionDTLSFailed(t *testing.T) {
