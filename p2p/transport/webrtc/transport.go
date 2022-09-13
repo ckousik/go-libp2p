@@ -275,7 +275,7 @@ func (t *WebRTCTransport) Dial(
 	select {
 	case s := <-signalChan:
 		if s.error != nil {
-			return nil, err
+			return nil, s.error
 		}
 	case <-ctx.Done():
 		scope.Done()
