@@ -255,9 +255,9 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	select {
 	case s := <-signalChan:
 		if s.error != nil {
-			log.Debug("peerconnection error", err)
+			log.Debug("peerconnection error", s.error)
 			defer cleanup()
-			return nil, err
+			return nil, s.error
 		}
 	case <-ctx.Done():
 		defer cleanup()
