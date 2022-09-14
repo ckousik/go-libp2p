@@ -243,14 +243,15 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	case <-ctx.Done():
 		defer cleanup()
 		return nil, ctx.Err()
-	case s := <-signalChan:
-		if s.error != nil {
-			log.Debugf("datachannel: ", s.error)
-			return nil, errDatachannel("datachannel error", s.error)
+	case signal := <-signalChan:
+		if signal.error != nil {
+			defer cleanup()
+			log.Debugf("datachannel: ", signal.error)
+			return nil, errDatachannel("datachannel error", signal.error)
 		}
 	}
 
-	conn, err := newConnection(
+	conn := newConnection(
 		pc,
 		l.transport,
 		scope,
@@ -261,11 +262,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		nil,
 		remoteMultiaddr,
 	)
-
-	if err != nil {
-		defer cleanup()
-		return nil, err
-	}
 
 	// we do not yet know A's peer ID so accept any inbound
 	secureConn, err := l.transport.noiseHandshake(ctx, pc, wrappedChannel, "", true)

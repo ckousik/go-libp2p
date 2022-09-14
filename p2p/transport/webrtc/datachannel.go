@@ -268,12 +268,15 @@ func (d *dataChannel) SetWriteDeadline(t time.Time) error {
 func (d *dataChannel) isRemoteWriteClosed() bool {
 	return atomic.LoadUint32(&d.remoteWriteClosed) == 1
 }
+
 func (d *dataChannel) isLocalWriteClosed() bool {
 	return atomic.LoadUint32(&d.localWriteClosed) == 1
 }
+
 func (d *dataChannel) isRemoteReadClosed() bool {
 	return atomic.LoadUint32(&d.remoteReadClosed) == 1
 }
+
 func (d *dataChannel) isLocalReadClosed() bool {
 	return atomic.LoadUint32(&d.localReadClosed) == 1
 }
