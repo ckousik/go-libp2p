@@ -130,7 +130,7 @@ func TestTransportWebRTC_ListenerCanCreateStreams(t *testing.T) {
 
 		stream, err := conn.OpenStream(context.Background())
 		require.NoError(t, err)
-		t.Logf("stream opened by listener")
+		t.Logf("listener opened stream")
 		_, err = stream.Write([]byte("test"))
 		require.NoError(t, err)
 	}()
@@ -190,8 +190,10 @@ func TestTransportWebRTC_DialerCanCreateStreams(t *testing.T) {
 	go func() {
 		conn, err := tr1.Dial(context.Background(), listener.Multiaddr(), listeningPeer)
 		require.NoError(t, err)
+		t.Logf("dialer opened connection")
 		stream, err := conn.OpenStream(context.Background())
 		require.NoError(t, err)
+		t.Logf("dialer opened stream")
 		_, err = stream.Write([]byte("test"))
 		require.NoError(t, err)
 
