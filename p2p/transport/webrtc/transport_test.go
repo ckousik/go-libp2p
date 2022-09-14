@@ -95,7 +95,7 @@ func TestTransportWebRTC_CanListenMultiple(t *testing.T) {
 	require.NoError(t, err)
 	listener, err := tr.Listen(listenMultiaddr)
 	require.NoError(t, err)
-	count := 5
+	count := 100
 
 	for i := 0; i < count; i++ {
 		go func() {
@@ -104,7 +104,6 @@ func TestTransportWebRTC_CanListenMultiple(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, conn.RemotePeer(), listeningPeer)
 		}()
-		time.Sleep(50 * time.Millisecond)
 	}
 
 	for i := 0; i < count; i++ {
