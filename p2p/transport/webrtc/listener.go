@@ -167,7 +167,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
-
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	settingEngine.SetICECredentials(addr.ufrag, addr.ufrag)
@@ -205,7 +204,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	// the listener has set up the onmessage callback. In this use case,
 	// since the data channels are negotiated out-of-band, they will be
 	// instantly in `readyState=open` once the SCTP connection is set up.
-	// Therefore, we wrap the datachannel before performing the 
+	// Therefore, we wrap the datachannel before performing the
 	// offer-answer exchange, so any messages sent from the remote get
 	// buffered.
 	wrappedChannel := newDataChannel(
