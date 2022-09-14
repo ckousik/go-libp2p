@@ -147,7 +147,10 @@ func (t *WebRTCTransport) Dial(
 	remoteMultiaddr ma.Multiaddr,
 	p peer.ID,
 ) (tpt.CapableConn, error) {
-	var pc *webrtc.PeerConnection
+	var (
+		pc             *webrtc.PeerConnection
+		wrappedChannel *dataChannel
+	)
 	scope, err := t.rcmgr.OpenConnection(network.DirOutbound, false, remoteMultiaddr)
 
 	cleanup := func() {
@@ -195,10 +198,10 @@ func (t *WebRTCTransport) Dial(
 	// the password using the STUN message.
 	ufrag := uuid.New().String()
 
-	se := webrtc.SettingEngine{}
-	se.SetICECredentials(ufrag, ufrag)
-	se.SetLite(false)
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
+	settingEngine := webrtc.SettingEngine{}
+	settingEngine.SetICECredentials(ufrag, ufrag)
+	settingEngine.SetLite(false)
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
 	pc, err = api.NewPeerConnection(t.webrtcConfig)
 	if err != nil {
@@ -208,7 +211,7 @@ func (t *WebRTCTransport) Dial(
 
 	// We need to set negotiated = true for this channel on both
 	// the client and server to avoid DCEP errors.
-	dc, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
+	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
 		Negotiated: func(v bool) *bool { return &v }(true),
 		ID:         func(v uint16) *uint16 { return &v }(1),
 	})
@@ -219,7 +222,6 @@ func (t *WebRTCTransport) Dial(
 	}
 
 	signalChan := make(chan struct{ error })
-	dcOpenedChan := make(chan *dataChannel)
 	var connectedOnce sync.Once
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
@@ -230,14 +232,14 @@ func (t *WebRTCTransport) Dial(
 		case webrtc.PeerConnectionStateFailed:
 			connectedOnce.Do(func() {
 				err := errConnectionFailed("peerconnection move to failed state", nil)
-				// log.Warn(err)
 				signalChan <- struct{ error }{err}
 			})
 		}
 	})
 
-	dc.OnOpen(func() {
-		cp, err := dc.Transport().Transport().ICETransport().GetSelectedCandidatePair()
+	wrappedChannel = newDataChannel(handshakeChannel, pc, nil, raddr)
+	handshakeChannel.OnOpen(func() {
+		cp, err := handshakeChannel.Transport().Transport().ICETransport().GetSelectedCandidatePair()
 		if cp == nil || err != nil {
 			err = errDatachannel("could not fetch selected candidate pair", err)
 			signalChan <- struct{ error }{err}
@@ -245,9 +247,11 @@ func (t *WebRTCTransport) Dial(
 		}
 
 		laddr := &net.UDPAddr{IP: net.ParseIP(cp.Local.Address), Port: int(cp.Local.Port)}
-		dcOpenedChan <- newDataChannel(dc, pc, laddr, raddr)
+		wrappedChannel.laddr = laddr
+		signalChan <- struct{ error }{nil}
 	})
 
+	// do offer-answer exchange
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
 		defer cleanup()
@@ -273,10 +277,12 @@ func (t *WebRTCTransport) Dial(
 		return nil, errConnectionFailed("could not set remote description", err)
 	}
 
+	// await peerconnection opening
 	select {
-	case s := <-signalChan:
-		if s.error != nil {
-			return nil, s.error
+	case signal := <-signalChan:
+		if signal.error != nil {
+			defer cleanup()
+			return nil, signal.error
 		}
 	case <-ctx.Done():
 		scope.Done()
@@ -284,29 +290,26 @@ func (t *WebRTCTransport) Dial(
 		return nil, errDataChannelTimeout
 	}
 
-	var dataChannel *dataChannel = nil
+	// await datachannel opening
 	select {
-	case dataChannel = <-dcOpenedChan:
-	case s := <-signalChan:
-		defer cleanup()
-		if s.error != nil {
-			return nil, s.error
+	case signal := <-signalChan:
+		if signal.error != nil {
+			defer cleanup()
+			return nil, signal.error
 		}
-		// should be unreachable
-		return nil, fmt.Errorf("should be unreachable")
 	case <-ctx.Done():
 		scope.Done()
 		defer cleanup()
 		return nil, errDataChannelTimeout
 	}
 
-	localAddr, err := manet.FromNetAddr(dataChannel.LocalAddr())
+	localAddr, err := manet.FromNetAddr(wrappedChannel.LocalAddr())
 	if err != nil {
 		defer cleanup()
 		return nil, err
 	}
 
-	conn, err := newConnection(
+	conn := newConnection(
 		pc,
 		t,
 		scope,
@@ -317,11 +320,7 @@ func (t *WebRTCTransport) Dial(
 		nil,
 		remoteMultiaddr,
 	)
-	if err != nil {
-		defer cleanup()
-		return nil, err
-	}
-	secureConn, err := t.noiseHandshake(ctx, pc, dataChannel, p, false)
+	secureConn, err := t.noiseHandshake(ctx, pc, wrappedChannel, p, false)
 	if err != nil {
 		defer cleanup()
 		return nil, err

@@ -50,7 +50,7 @@ func newConnection(
 	remotePeer peer.ID,
 	remoteKey ic.PubKey,
 	remoteMultiaddr ma.Multiaddr,
-) (*connection, error) {
+) *connection {
 	accept := make(chan network.MuxedStream, 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -89,7 +89,7 @@ func newConnection(
 		})
 	})
 
-	return conn, nil
+	return conn
 }
 
 // Implement network.MuxedConn
