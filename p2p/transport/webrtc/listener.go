@@ -167,8 +167,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
-	// signaling channel wraps an error in a struct to make
-	// the error nullable.
 
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
@@ -185,11 +183,11 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
+	// signaling channel wraps an error in a struct to make
+	// the error nullable.
 	signalChan := make(chan struct{ error })
 	// this enforces that the correct data channel label is used
 	// for the handshake
-	// we create the data channel early and set up the callbacks to buffer
-	// data
 	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
 		Negotiated: func(v bool) *bool { return &v }(true),
 		ID:         func(v uint16) *uint16 { return &v }(1),
@@ -198,6 +196,18 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		defer cleanup()
 		return nil, err
 	}
+
+	// The raw datachannel is wrapped in the libp2p abstraction
+	// as early as possible to allow any messages sent by the remote
+	// to be buffered. This is done since the dialer leads the listener
+	// in the handshake process, and a faster dialer could have set up
+	// their connection and started sending Noise handshake messages before
+	// the listener has set up the onmessage callback. In this use case,
+	// since the data channels are negotiated out-of-band, they will be
+	// instantly in `readyState=open` once the SCTP connection is set up.
+	// Therefore, we wrap the datachannel before performing the 
+	// offer-answer exchange, so any messages sent from the remote get
+	// buffered.
 	wrappedChannel := newDataChannel(
 		handshakeChannel,
 		pc,
@@ -211,6 +221,10 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 			signalChan <- struct{ error }{nil}
 		})
 	})
+
+	// Checking the peerconnection state is not necessary in this case as any
+	// error caused while accepting will trigger the onerror callback of the
+	// handshake channel.
 	handshakeChannel.OnError(func(e error) {
 		handshakeOnce.Do(func() {
 			signalChan <- struct{ error }{e}
@@ -238,7 +252,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		return nil, err
 	}
 
-	// await opening of datachannel
+	// await datachannel moving to open state
 	select {
 	case <-ctx.Done():
 		defer cleanup()
@@ -251,6 +265,9 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 		}
 	}
 
+	// The connection is instantiated before performing the Noise handshake. This is
+	// to handle the case where the remote is faster and attempts to initiate a stream
+	// before the ondatachannel callback can be set.
 	conn := newConnection(
 		pc,
 		l.transport,

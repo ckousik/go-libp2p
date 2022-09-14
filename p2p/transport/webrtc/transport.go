@@ -303,6 +303,9 @@ func (t *WebRTCTransport) Dial(
 		return nil, errDataChannelTimeout
 	}
 
+	// the local address of the selected candidate pair should be the
+	// local address for the connection, since different datachannels
+	// are multiplexed over the same SCTP connection
 	localAddr, err := manet.FromNetAddr(wrappedChannel.LocalAddr())
 	if err != nil {
 		defer cleanup()
