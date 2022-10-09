@@ -173,6 +173,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	settingEngine.SetLite(true)
 	settingEngine.SetICEUDPMux(l.mux)
 	settingEngine.DisableCertificateFingerprintVerification(true)
+	settingEngine.DetachDataChannels()
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
@@ -207,15 +208,22 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	// Therefore, we wrap the datachannel before performing the
 	// offer-answer exchange, so any messages sent from the remote get
 	// buffered.
-	wrappedChannel := newDataChannel(
-		handshakeChannel,
-		pc,
-		l.mux.LocalAddr(),
-		addr.raddr,
-	)
+	var wrappedChannel *dataChannel
 
 	var handshakeOnce sync.Once
 	handshakeChannel.OnOpen(func() {
+		rwc, err := handshakeChannel.Detach()
+		if err != nil {
+			signalChan <- struct{ error }{errDatachannel("could not detach", err)}
+			return
+		}
+		wrappedChannel = newDataChannel(
+			handshakeChannel,
+			rwc,
+			pc,
+			l.mux.LocalAddr(),
+			addr.raddr,
+		)
 		handshakeOnce.Do(func() {
 			signalChan <- struct{ error }{nil}
 		})
