@@ -77,8 +77,15 @@ func newConnection(
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		log.Debugf("[%s] incoming datachannel: %s", localPeer, dc.Label())
 		id := *dc.ID()
-		stream := newDataChannel(dc, pc, nil, nil)
+		var stream *dataChannel
 		dc.OnOpen(func() {
+			// datachannel cannot be detached before opening
+			rwc, err := dc.Detach()
+			if err != nil {
+				log.Errorf("[%s] could not detch channel: %s", localPeer, dc.Label())
+				return
+			}
+			stream = newDataChannel(dc, rwc, pc, nil, nil)
 			conn.addStream(id, stream)
 			accept <- stream
 		})
@@ -90,6 +97,11 @@ func newConnection(
 	})
 
 	return conn
+}
+
+// ConnState implements transport.CapableConn
+func (c *connection) ConnState() network.ConnectionState {
+	return network.ConnectionState{}
 }
 
 // Implement network.MuxedConn
@@ -134,8 +146,19 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 	}
 
 	streamId := *dc.ID()
-	stream := newDataChannel(dc, c.pc, nil, nil)
+	var stream *dataChannel
 	dc.OnOpen(func() {
+		rwc, err := dc.Detach()
+		if err != nil {
+			result <- struct {
+				network.MuxedStream
+				error
+			}{nil,
+				errDatachannel("could not detach", err),
+			}
+			return
+		}
+		stream = newDataChannel(dc, rwc, c.pc, nil, nil)
 		c.addStream(streamId, stream)
 		result <- struct {
 			network.MuxedStream

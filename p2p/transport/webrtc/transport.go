@@ -201,6 +201,7 @@ func (t *WebRTCTransport) Dial(
 	settingEngine := webrtc.SettingEngine{}
 	settingEngine.SetICECredentials(ufrag, ufrag)
 	settingEngine.SetLite(false)
+	settingEngine.DetachDataChannels()
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
 	pc, err = api.NewPeerConnection(t.webrtcConfig)
@@ -237,8 +238,13 @@ func (t *WebRTCTransport) Dial(
 		}
 	})
 
-	wrappedChannel = newDataChannel(handshakeChannel, pc, nil, raddr)
 	handshakeChannel.OnOpen(func() {
+		rwc, err := handshakeChannel.Detach()
+		if err != nil {
+			signalChan <- struct{ error }{err}
+			return
+		}
+		wrappedChannel = newDataChannel(handshakeChannel, rwc, pc, nil, raddr)
 		cp, err := handshakeChannel.Transport().Transport().ICETransport().GetSelectedCandidatePair()
 		if cp == nil || err != nil {
 			err = errDatachannel("could not fetch selected candidate pair", err)
