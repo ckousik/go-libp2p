@@ -145,7 +145,7 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		return nil, err
 	}
 
-	streamId := *dc.ID()
+	streamID := *dc.ID()
 	var stream *dataChannel
 	dc.OnOpen(func() {
 		rwc, err := dc.Detach()
@@ -159,7 +159,7 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 			return
 		}
 		stream = newDataChannel(dc, rwc, c.pc, nil, nil)
-		c.addStream(streamId, stream)
+		c.addStream(streamID, stream)
 		result <- struct {
 			network.MuxedStream
 			error
@@ -168,7 +168,7 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 
 	dc.OnClose(func() {
 		stream.remoteClosed()
-		c.removeStream(streamId)
+		c.removeStream(streamID)
 	})
 
 	select {
