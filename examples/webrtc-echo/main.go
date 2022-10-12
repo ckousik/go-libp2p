@@ -16,7 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
-	libp2pwebrtc "github.com/plauche/go-libp2p/p2p/transport/webrtc"
+	libp2pwebrtc "github.com/libp2p/go-libp2p/p2p/transport/webrtc"
 
 	golog "github.com/ipfs/go-log/v2"
 
