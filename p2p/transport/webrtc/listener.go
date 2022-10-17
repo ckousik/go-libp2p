@@ -186,11 +186,13 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	// signaling channel wraps an error in a struct to make
 	// the error nullable.
 	signalChan := make(chan struct{ error })
+	var wrappedChannel *dataChannel
+	var handshakeOnce sync.Once
 	// this enforces that the correct data channel label is used
 	// for the handshake
-	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
+	handshakeChannel, err := pc.CreateDataChannel("handshake", &webrtc.DataChannelInit{
 		Negotiated: func(v bool) *bool { return &v }(true),
-		ID:         func(v uint16) *uint16 { return &v }(1),
+		ID:         func(v uint16) *uint16 { return &v }(0),
 	})
 	if err != nil {
 		defer cleanup()
@@ -208,9 +210,6 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	// Therefore, we wrap the datachannel before performing the
 	// offer-answer exchange, so any messages sent from the remote get
 	// buffered.
-	var wrappedChannel *dataChannel
-
-	var handshakeOnce sync.Once
 	handshakeChannel.OnOpen(func() {
 		rwc, err := handshakeChannel.Detach()
 		if err != nil {

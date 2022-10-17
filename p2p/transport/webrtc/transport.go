@@ -210,20 +210,9 @@ func (t *WebRTCTransport) Dial(
 		return nil, errInternal("could not instantiate peerconnection", err)
 	}
 
-	// We need to set negotiated = true for this channel on both
-	// the client and server to avoid DCEP errors.
-	handshakeChannel, err := pc.CreateDataChannel("data", &webrtc.DataChannelInit{
-		Negotiated: func(v bool) *bool { return &v }(true),
-		ID:         func(v uint16) *uint16 { return &v }(1),
-	})
-
-	if err != nil {
-		defer cleanup()
-		return nil, errDatachannel("could not create", err)
-	}
-
 	signalChan := make(chan struct{ error })
 	var connectedOnce sync.Once
+
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
@@ -238,6 +227,16 @@ func (t *WebRTCTransport) Dial(
 		}
 	})
 
+	// We need to set negotiated = true for this channel on both
+	// the client and server to avoid DCEP errors.
+	handshakeChannel, err := pc.CreateDataChannel("handshake", &webrtc.DataChannelInit{
+		Negotiated: func(v bool) *bool { return &v }(true),
+		ID:         func(v uint16) *uint16 { return &v }(0),
+	})
+	if err != nil {
+		defer cleanup()
+		return nil, errDatachannel("could not create", err)
+	}
 	handshakeChannel.OnOpen(func() {
 		rwc, err := handshakeChannel.Detach()
 		if err != nil {
