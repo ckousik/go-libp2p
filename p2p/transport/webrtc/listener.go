@@ -70,7 +70,7 @@ func newListener(transport *WebRTCTransport, laddr ma.Multiaddr, socket net.Pack
 	if err != nil {
 		return nil, err
 	}
-	localMhBuf, _ := multihash.EncodeName(localMh, sdpHashToMh(localFingerprints[0].Algorithm))
+	localMhBuf, _ := multihash.Encode(localMh, multihash.SHA2_256)
 	localFpMultibase, _ := multibase.Encode(multibase.Base58BTC, localMhBuf)
 
 	ctx, cancel := context.WithCancel(context.Background())

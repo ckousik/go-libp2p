@@ -10,32 +10,6 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-func mhToSdpHash(mh string) string {
-	switch mh {
-	case "sha1":
-		return "sha1"
-	case "sha2-256":
-		return "sha-256"
-	case "md5":
-		return "md5"
-	default:
-		return ""
-	}
-}
-
-func sdpHashToMh(sdpHash string) string {
-	switch sdpHash {
-	case "sha-256":
-		return "sha2-256"
-	case "sha1":
-		return "sha1"
-	case "md5":
-		return "md5"
-	default:
-		return ""
-	}
-}
-
 func maFingerprintToSdp(fp string) string {
 	result := ""
 	first := true
@@ -57,11 +31,7 @@ func fingerprintToSDP(fp *mh.DecodedMultihash) string {
 		return ""
 	}
 	fpDigest := maFingerprintToSdp(hex.EncodeToString(fp.Digest))
-	fpAlgo := mhToSdpHash(strings.ToLower(fp.Name))
-	if fpAlgo == "" {
-		fpAlgo = strings.ToLower(fp.Name)
-	}
-	return fpAlgo + " " + fpDigest
+	return "sha-256 " + fpDigest
 }
 
 func decodeRemoteFingerprint(maddr ma.Multiaddr) (*mh.DecodedMultihash, error) {
@@ -81,11 +51,7 @@ func encodeDTLSFingerprint(fp webrtc.DTLSFingerprint) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	algo := sdpHashToMh(strings.ToLower(fp.Algorithm))
-	if algo == "" {
-		algo = fp.Algorithm
-	}
-	encoded, err := mh.EncodeName(digest, algo)
+	encoded, err := mh.Encode(digest, mh.SHA2_256)
 	if err != nil {
 		return "", err
 	}
