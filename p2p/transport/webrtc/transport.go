@@ -412,7 +412,7 @@ func (t *WebRTCTransport) noiseHandshake(ctx context.Context, pc *webrtc.PeerCon
 			return
 		}
 	} else {
-		secureConn, err = sessionTransport.SecureOutbound(ctx, datachannel, peer)
+		secureConn, err = sessionTransport.SecureOutboundForAnyPeerID(ctx, datachannel)
 		if err != nil {
 			err = errNoise("failed to secure outbound", err)
 			return
