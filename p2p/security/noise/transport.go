@@ -41,11 +41,7 @@ func New(privkey crypto.PrivKey) (*Transport, error) {
 // SecureInbound runs the Noise handshake as the responder.
 // if p is empty accept any peer ID.
 func (t *Transport) SecureInbound(ctx context.Context, insecure net.Conn, p peer.ID) (sec.SecureConn, error) {
-	checkPeerID := true
-	if p == "" {
-		checkPeerID = false
-	}
-	c, err := newSecureSession(t, ctx, insecure, p, nil, nil, nil, false, checkPeerID)
+	c, err := newSecureSession(t, ctx, insecure, p, nil, nil, nil, false, p != "")
 	if err != nil {
 		addr, maErr := manet.FromNetAddr(insecure.RemoteAddr())
 		if maErr == nil {
@@ -58,6 +54,13 @@ func (t *Transport) SecureInbound(ctx context.Context, insecure net.Conn, p peer
 // SecureOutbound runs the Noise handshake as the initiator.
 func (t *Transport) SecureOutbound(ctx context.Context, insecure net.Conn, p peer.ID) (sec.SecureConn, error) {
 	return newSecureSession(t, ctx, insecure, p, nil, nil, nil, true, true)
+}
+
+// SecureOutboundForAnyPeerID runs the Noise handshake as the initiator but does not check
+// the remote's peer ID. This is the outbound equivalent of calling `SecureInbound` with an empty
+// peer ID.
+func (t *Transport) SecureOutboundForAnyPeerID(ctx context.Context, insecure net.Conn) (sec.SecureConn, error) {
+	return newSecureSession(t, ctx, insecure, "", nil, nil, nil, true, false)
 }
 
 func (t *Transport) WithSessionOptions(opts ...SessionOption) (*SessionTransport, error) {
