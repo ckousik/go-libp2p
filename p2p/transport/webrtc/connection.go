@@ -5,7 +5,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/google/uuid"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -135,12 +134,11 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		return nil, os.ErrClosed
 	}
 
-	label := uuid.New().String()
 	result := make(chan struct {
 		network.MuxedStream
 		error
 	})
-	dc, err := c.pc.CreateDataChannel(label, nil)
+	dc, err := c.pc.CreateDataChannel("", nil)
 	if err != nil {
 		return nil, err
 	}

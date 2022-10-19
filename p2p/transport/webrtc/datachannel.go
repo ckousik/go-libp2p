@@ -41,7 +41,6 @@ const (
 // Package pion detached data channel into a net.Conn
 // and then a network.MuxedStream
 type dataChannel struct {
-	// TODO: Are these circular references okay?
 	channel       *webrtc.DataChannel
 	rwc           datachannel.ReadWriteCloser
 	laddr         net.Addr
