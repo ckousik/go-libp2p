@@ -10,10 +10,9 @@ import "net"
 // Pion will bind to a local interface which is not loopback
 // and there may not be a route from, say 192.168.0.0/16 to 0.0.0.0.
 
-var listenerIp = net.IPv4(0, 0, 0, 0)
-var dialerIp = net.IPv4(0, 0, 0, 0)
-
-func init() {
+func getListenerAndDialerIP() (listenerIp net.IP, dialerIp net.IP) {
+	listenerIp = net.IPv4(0, 0, 0, 0)
+	dialerIp = net.IPv4(0, 0, 0, 0)
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return
@@ -37,4 +36,5 @@ func init() {
 			}
 		}
 	}
+	return
 }

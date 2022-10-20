@@ -3,6 +3,8 @@ package libp2pwebrtc
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -25,6 +27,16 @@ func getTransport(t *testing.T) (tpt.Transport, peer.ID) {
 	peerID, err := peer.IDFromPrivateKey(privKey)
 	require.NoError(t, err)
 	return transport, peerID
+}
+
+var (
+	listenerIp net.IP
+	dialerIp   net.IP
+)
+
+func TestMain(m *testing.M) {
+	listenerIp, dialerIp = getListenerAndDialerIP()
+	os.Exit(m.Run())
 }
 
 func TestTransportWebRTCCanDial(t *testing.T) {
