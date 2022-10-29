@@ -12,6 +12,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
@@ -327,7 +328,9 @@ func (t *WebRTCTransport) Dial(
 		nil,
 		remoteMultiaddr,
 	)
-	secureConn, err := t.noiseHandshake(ctx, pc, wrappedChannel, p, false)
+	tctx, cancel := context.WithTimeout(context.Background(), 2 * time.Second)
+	defer cancel()
+	secureConn, err := t.noiseHandshake(tctx, pc, wrappedChannel, p, false)
 	if err != nil {
 		defer cleanup()
 		return nil, err
@@ -406,13 +409,13 @@ func (t *WebRTCTransport) noiseHandshake(ctx context.Context, pc *webrtc.PeerCon
 		return nil, errNoise("could not instantiate transport", err)
 	}
 	if inbound {
-		secureConn, err = sessionTransport.SecureInbound(ctx, datachannel, peer)
+		secureConn, err = sessionTransport.SecureOutboundForAnyPeerID(ctx, datachannel)
 		if err != nil {
 			err = errNoise("failed to secure inbound", err)
 			return
 		}
 	} else {
-		secureConn, err = sessionTransport.SecureOutboundForAnyPeerID(ctx, datachannel)
+		secureConn, err = sessionTransport.SecureInbound(ctx, datachannel, peer)
 		if err != nil {
 			err = errNoise("failed to secure outbound", err)
 			return

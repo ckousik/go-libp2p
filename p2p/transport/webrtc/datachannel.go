@@ -144,6 +144,7 @@ func (d *dataChannel) Read(b []byte) (int, error) {
 
 		// read in a separate goroutine to enable read deadlines
 		go func() {
+			log.Debugf("reading from datachannel")
 			read, err = d.rwc.Read(d.buf)
 			if err != nil {
 				log.Warnf("error reading from datachannel: %v", err)

@@ -211,6 +211,7 @@ func (l *listener) accept(ctx context.Context, addr candidateAddr) (tpt.CapableC
 	// offer-answer exchange, so any messages sent from the remote get
 	// buffered.
 	handshakeChannel.OnOpen(func() {
+		log.Debugf("handshake channel open")
 		rwc, err := handshakeChannel.Detach()
 		if err != nil {
 			signalChan <- struct{ error }{errDatachannel("could not detach", err)}
