@@ -18,6 +18,7 @@ import (
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/core/sec"
 	tpt "github.com/libp2p/go-libp2p/core/transport"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
@@ -66,7 +67,7 @@ func New(privKey ic.PrivKey, rcmgr network.ResourceManager, opts ...Option) (*We
 	config := webrtc.Configuration{
 		Certificates: []webrtc.Certificate{*cert},
 	}
-	noiseTpt, err := noise.New(privKey)
+	noiseTpt, err := noise.New(privKey, []protocol.ID{})
 	if err != nil {
 		return nil, errInternal("unable to create noise transport", err)
 	}
