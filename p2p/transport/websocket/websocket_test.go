@@ -9,10 +9,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,7 +82,7 @@ func newSecureMuxer(t *testing.T) (peer.ID, sec.SecureMuxer) {
 		t.Fatal(err)
 	}
 	var secMuxer csms.SSMuxer
-	noiseTpt, err := noise.New(priv)
+	noiseTpt, err := noise.New(priv, nil)
 	require.NoError(t, err)
 	secMuxer.AddTransport(noise.ID, noiseTpt)
 	return id, &secMuxer
@@ -160,7 +163,7 @@ func testWSSServer(t *testing.T, listenAddr ma.Multiaddr) (ma.Multiaddr, peer.ID
 	}
 
 	id, u := newSecureUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager, WithTLSConfig(tlsConf))
+	tpt, err := New(u, &network.NullResourceManager{}, WithTLSConfig(tlsConf))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,13 +221,51 @@ func getTLSConf(t *testing.T, ip net.IP, start, end time.Time) *tls.Config {
 	}
 }
 
+func TestHostHeaderWss(t *testing.T) {
+	server := &http.Server{}
+	l, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	errChan := make(chan error, 1)
+	go func() {
+		server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer close(errChan)
+			if !strings.Contains(r.Host, "example.com") {
+				errChan <- errors.New("Didn't see host header")
+			}
+			w.WriteHeader(http.StatusNotFound)
+		})
+		server.TLSConfig = getTLSConf(t, net.ParseIP("127.0.0.1"), time.Now(), time.Now().Add(time.Hour))
+		server.ServeTLS(l, "", "")
+	}()
+
+	_, port, err := net.SplitHostPort(l.Addr().String())
+	require.NoError(t, err)
+	serverMA := ma.StringCast("/ip4/127.0.0.1/tcp/" + port + "/tls/sni/example.com/ws")
+
+	tlsConfig := &tls.Config{InsecureSkipVerify: true} // Our test server doesn't have a cert signed by a CA
+	_, u := newSecureUpgrader(t)
+	tpt, err := New(u, &network.NullResourceManager{}, WithTLSClientConfig(tlsConfig))
+	require.NoError(t, err)
+
+	masToDial, err := tpt.Resolve(context.Background(), serverMA)
+	require.NoError(t, err)
+
+	_, err = tpt.Dial(context.Background(), masToDial[0], test.RandPeerIDFatal(t))
+	require.Error(t, err)
+
+	err = <-errChan
+	require.NoError(t, err)
+}
+
 func TestDialWss(t *testing.T) {
 	serverMA, rid, errChan := testWSSServer(t, ma.StringCast("/ip4/127.0.0.1/tcp/0/tls/sni/example.com/ws"))
 	require.Contains(t, serverMA.String(), "tls")
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: true} // Our test server doesn't have a cert signed by a CA
 	_, u := newSecureUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager, WithTLSClientConfig(tlsConfig))
+	tpt, err := New(u, &network.NullResourceManager{}, WithTLSClientConfig(tlsConfig))
 	require.NoError(t, err)
 
 	masToDial, err := tpt.Resolve(context.Background(), serverMA)
@@ -247,7 +288,7 @@ func TestDialWssNoClientCert(t *testing.T) {
 	require.Contains(t, serverMA.String(), "tls")
 
 	_, u := newSecureUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager)
+	tpt, err := New(u, &network.NullResourceManager{})
 	require.NoError(t, err)
 
 	masToDial, err := tpt.Resolve(context.Background(), serverMA)
@@ -284,7 +325,7 @@ func connectAndExchangeData(t *testing.T, laddr ma.Multiaddr, secure bool) {
 		opts = append(opts, WithTLSConfig(tlsConf))
 	}
 	server, u := newUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager, opts...)
+	tpt, err := New(u, &network.NullResourceManager{}, opts...)
 	require.NoError(t, err)
 	l, err := tpt.Listen(laddr)
 	require.NoError(t, err)
@@ -303,7 +344,7 @@ func connectAndExchangeData(t *testing.T, laddr ma.Multiaddr, secure bool) {
 			opts = append(opts, WithTLSClientConfig(&tls.Config{InsecureSkipVerify: true}))
 		}
 		_, u := newUpgrader(t)
-		tpt, err := New(u, network.NullResourceManager, opts...)
+		tpt, err := New(u, &network.NullResourceManager{}, opts...)
 		require.NoError(t, err)
 		c, err := tpt.Dial(context.Background(), l.Multiaddr(), server)
 		require.NoError(t, err)
@@ -337,7 +378,7 @@ func TestWebsocketConnection(t *testing.T) {
 
 func TestWebsocketListenSecureFailWithoutTLSConfig(t *testing.T) {
 	_, u := newUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager)
+	tpt, err := New(u, &network.NullResourceManager{})
 	require.NoError(t, err)
 	addr := ma.StringCast("/ip4/127.0.0.1/tcp/0/wss")
 	_, err = tpt.Listen(addr)
@@ -346,7 +387,7 @@ func TestWebsocketListenSecureFailWithoutTLSConfig(t *testing.T) {
 
 func TestWebsocketListenSecureAndInsecure(t *testing.T) {
 	serverID, serverUpgrader := newUpgrader(t)
-	server, err := New(serverUpgrader, network.NullResourceManager, WithTLSConfig(generateTLSConfig(t)))
+	server, err := New(serverUpgrader, &network.NullResourceManager{}, WithTLSConfig(generateTLSConfig(t)))
 	require.NoError(t, err)
 
 	lnInsecure, err := server.Listen(ma.StringCast("/ip4/127.0.0.1/tcp/0/ws"))
@@ -356,7 +397,7 @@ func TestWebsocketListenSecureAndInsecure(t *testing.T) {
 
 	t.Run("insecure", func(t *testing.T) {
 		_, clientUpgrader := newUpgrader(t)
-		client, err := New(clientUpgrader, network.NullResourceManager, WithTLSClientConfig(&tls.Config{InsecureSkipVerify: true}))
+		client, err := New(clientUpgrader, &network.NullResourceManager{}, WithTLSClientConfig(&tls.Config{InsecureSkipVerify: true}))
 		require.NoError(t, err)
 
 		// dialing the insecure address should succeed
@@ -373,7 +414,7 @@ func TestWebsocketListenSecureAndInsecure(t *testing.T) {
 
 	t.Run("secure", func(t *testing.T) {
 		_, clientUpgrader := newUpgrader(t)
-		client, err := New(clientUpgrader, network.NullResourceManager, WithTLSClientConfig(&tls.Config{InsecureSkipVerify: true}))
+		client, err := New(clientUpgrader, &network.NullResourceManager{}, WithTLSClientConfig(&tls.Config{InsecureSkipVerify: true}))
 		require.NoError(t, err)
 
 		// dialing the insecure address should succeed
@@ -391,7 +432,7 @@ func TestWebsocketListenSecureAndInsecure(t *testing.T) {
 
 func TestConcurrentClose(t *testing.T) {
 	_, u := newUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager)
+	tpt, err := New(u, &network.NullResourceManager{})
 	require.NoError(t, err)
 	l, err := tpt.maListen(ma.StringCast("/ip4/127.0.0.1/tcp/0/ws"))
 	if err != nil {
@@ -429,7 +470,7 @@ func TestConcurrentClose(t *testing.T) {
 
 func TestWriteZero(t *testing.T) {
 	_, u := newUpgrader(t)
-	tpt, err := New(u, network.NullResourceManager)
+	tpt, err := New(u, &network.NullResourceManager{})
 	if err != nil {
 		t.Fatal(err)
 	}

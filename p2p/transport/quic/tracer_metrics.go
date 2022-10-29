@@ -267,8 +267,8 @@ func (m *metricsConnTracer) SentPacket(hdr *logging.ExtendedHeader, size logging
 	sentPackets.WithLabelValues(m.getEncLevel(logging.PacketTypeFromHeader(&hdr.Header))).Inc()
 }
 
-func (m *metricsConnTracer) ReceivedVersionNegotiationPacket(hdr *logging.Header, v []logging.VersionNumber) {
-	bytesTransferred.WithLabelValues("rcvd").Add(float64(hdr.ParsedLen() + logging.ByteCount(4*len(v))))
+func (m *metricsConnTracer) ReceivedVersionNegotiationPacket(dst, src logging.ArbitraryLenConnectionID, v []logging.VersionNumber) {
+	bytesTransferred.WithLabelValues("rcvd").Add(1 /* header form byte */ + 4 /* version number */ + 2 /* src and dest conn id length fields */ + float64(dst.Len()+src.Len()) + float64(4*len(v)))
 	rcvdPackets.WithLabelValues("Version Negotiation").Inc()
 }
 
@@ -281,7 +281,7 @@ func (m *metricsConnTracer) ReceivedPacket(hdr *logging.ExtendedHeader, size log
 	rcvdPackets.WithLabelValues(m.getEncLevel(logging.PacketTypeFromHeader(&hdr.Header))).Inc()
 }
 
-func (m *metricsConnTracer) BufferedPacket(packetType logging.PacketType) {
+func (m *metricsConnTracer) BufferedPacket(packetType logging.PacketType, _ logging.ByteCount) {
 	bufferedPackets.WithLabelValues(m.getEncLevel(packetType)).Inc()
 }
 

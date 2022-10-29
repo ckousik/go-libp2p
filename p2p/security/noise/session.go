@@ -41,6 +41,9 @@ type secureSession struct {
 	prologue []byte
 
 	initiatorEarlyDataHandler, responderEarlyDataHandler EarlyDataHandler
+
+	// ConnectionState holds state information releated to the secureSession entity.
+	connectionState network.ConnectionState
 }
 
 // newSecureSession creates a Noise session over the given insecureConn Conn, using
@@ -112,7 +115,7 @@ func (s *secureSession) RemotePublicKey() crypto.PubKey {
 }
 
 func (s *secureSession) ConnState() network.ConnectionState {
-	return network.ConnectionState{}
+	return s.connectionState
 }
 
 func (s *secureSession) SetDeadline(t time.Time) error {
@@ -129,4 +132,11 @@ func (s *secureSession) SetWriteDeadline(t time.Time) error {
 
 func (s *secureSession) Close() error {
 	return s.insecureConn.Close()
+}
+
+func SessionWithConnState(s *secureSession, muxer string) *secureSession {
+	if s != nil {
+		s.connectionState.NextProto = muxer
+	}
+	return s
 }

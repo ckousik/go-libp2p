@@ -121,21 +121,21 @@ func TestOutboundConnectionGating(t *testing.T) {
 
 	testGater := &testGater{}
 	_, dialUpgrader := createUpgrader(t, upgrader.WithConnectionGater(testGater))
-	conn, err := dial(t, dialUpgrader, ln.Multiaddr(), id, network.NullScope)
+	conn, err := dial(t, dialUpgrader, ln.Multiaddr(), id, &network.NullScope{})
 	require.NoError(err)
 	require.NotNil(conn)
 	_ = conn.Close()
 
 	// blocking accepts doesn't affect the dialling side, only the listener.
 	testGater.BlockAccept(true)
-	conn, err = dial(t, dialUpgrader, ln.Multiaddr(), id, network.NullScope)
+	conn, err = dial(t, dialUpgrader, ln.Multiaddr(), id, &network.NullScope{})
 	require.NoError(err)
 	require.NotNil(conn)
 	_ = conn.Close()
 
 	// now let's block all connections after being secured.
 	testGater.BlockSecured(true)
-	conn, err = dial(t, dialUpgrader, ln.Multiaddr(), id, network.NullScope)
+	conn, err = dial(t, dialUpgrader, ln.Multiaddr(), id, &network.NullScope{})
 	require.Error(err)
 	require.Contains(err.Error(), "gater rejected connection")
 	require.Nil(conn)
@@ -153,7 +153,7 @@ func TestOutboundResourceManagement(t *testing.T) {
 		gomock.InOrder(
 			connScope.EXPECT().PeerScope(),
 			connScope.EXPECT().SetPeer(id),
-			connScope.EXPECT().PeerScope().Return(network.NullScope),
+			connScope.EXPECT().PeerScope().Return(&network.NullScope{}),
 		)
 		_, dialUpgrader := createUpgrader(t)
 		conn, err := dial(t, dialUpgrader, ln.Multiaddr(), id, connScope)
@@ -174,7 +174,7 @@ func TestOutboundResourceManagement(t *testing.T) {
 		gomock.InOrder(
 			connScope.EXPECT().PeerScope(),
 			connScope.EXPECT().SetPeer(id),
-			connScope.EXPECT().PeerScope().Return(network.NullScope),
+			connScope.EXPECT().PeerScope().Return(&network.NullScope{}),
 			connScope.EXPECT().Done(),
 		)
 		_, dialUpgrader := createUpgrader(t)

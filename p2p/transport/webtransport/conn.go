@@ -27,7 +27,7 @@ func (c *connMultiaddrs) RemoteMultiaddr() ma.Multiaddr { return c.remote }
 type conn struct {
 	*connSecurityMultiaddrs
 
-	transport tpt.Transport
+	transport *transport
 	session   *webtransport.Session
 
 	scope network.ConnScope
@@ -35,7 +35,7 @@ type conn struct {
 
 var _ tpt.CapableConn = &conn{}
 
-func newConn(tr tpt.Transport, sess *webtransport.Session, sconn *connSecurityMultiaddrs, scope network.ConnScope) *conn {
+func newConn(tr *transport, sess *webtransport.Session, sconn *connSecurityMultiaddrs, scope network.ConnScope) *conn {
 	return &conn{
 		connSecurityMultiaddrs: sconn,
 		transport:              tr,
@@ -60,7 +60,18 @@ func (c *conn) AcceptStream() (network.MuxedStream, error) {
 	return &stream{str}, nil
 }
 
-func (c *conn) Close() error             { return c.session.Close() }
+func (c *conn) allowWindowIncrease(size uint64) bool {
+	return c.scope.ReserveMemory(int(size), network.ReservationPriorityMedium) == nil
+}
+
+// Close closes the connection.
+// It must be called even if the peer closed the connection in order for
+// garbage collection to properly work in this package.
+func (c *conn) Close() error {
+	c.transport.removeConn(c.session)
+	return c.session.Close()
+}
+
 func (c *conn) IsClosed() bool           { return c.session.Context().Err() != nil }
 func (c *conn) Scope() network.ConnScope { return c.scope }
 func (c *conn) Transport() tpt.Transport { return c.transport }

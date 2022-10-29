@@ -11,16 +11,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p/p2p/security/noise/pb"
-
-	"github.com/benbjohnson/clock"
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/connmgr"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	tpt "github.com/libp2p/go-libp2p/core/transport"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	"github.com/libp2p/go-libp2p/p2p/security/noise/pb"
+	"github.com/libp2p/go-libp2p/p2p/transport/internal/quicutils"
+
+	"github.com/benbjohnson/clock"
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/lucas-clemente/quic-go"
 	"github.com/lucas-clemente/quic-go/http3"
 	"github.com/marten-seemann/webtransport-go"
 	ma "github.com/multiformats/go-multiaddr"
@@ -69,8 +71,9 @@ type transport struct {
 	pid     peer.ID
 	clock   clock.Clock
 
-	rcmgr network.ResourceManager
-	gater connmgr.ConnectionGater
+	quicConfig *quic.Config
+	rcmgr      network.ResourceManager
+	gater      connmgr.ConnectionGater
 
 	listenOnce    sync.Once
 	listenOnceErr error
@@ -79,6 +82,9 @@ type transport struct {
 	tlsClientConf *tls.Config
 
 	noise *noise.Transport
+
+	connMx sync.Mutex
+	conns  map[uint64]*conn // using quic-go's ConnectionTracingKey as map key
 }
 
 var _ tpt.Transport = &transport{}
@@ -96,17 +102,22 @@ func New(key ic.PrivKey, gater connmgr.ConnectionGater, rcmgr network.ResourceMa
 		rcmgr:   rcmgr,
 		gater:   gater,
 		clock:   clock.New(),
+		conns:   map[uint64]*conn{},
 	}
+	t.quicConfig = &quic.Config{AllowConnectionWindowIncrease: t.allowWindowIncrease}
 	for _, opt := range opts {
 		if err := opt(t); err != nil {
 			return nil, err
 		}
 	}
-	n, err := noise.New(key)
+	n, err := noise.New(key, nil)
 	if err != nil {
 		return nil, err
 	}
 	t.noise = n
+	if qlogTracer := quicutils.QLOGTracer; qlogTracer != nil {
+		t.quicConfig.Tracer = qlogTracer
+	}
 	return t, nil
 }
 
@@ -150,8 +161,9 @@ func (t *transport) Dial(ctx context.Context, raddr ma.Multiaddr, p peer.ID) (tp
 		scope.Done()
 		return nil, fmt.Errorf("secured connection gated")
 	}
-
-	return newConn(t, sess, sconn, scope), nil
+	conn := newConn(t, sess, sconn, scope)
+	t.addConn(sess, conn)
+	return conn, nil
 }
 
 func (t *transport) dial(ctx context.Context, addr string, sni string, certHashes []multihash.DecodedMultihash) (*webtransport.Session, error) {
@@ -176,7 +188,10 @@ func (t *transport) dial(ctx context.Context, addr string, sni string, certHashe
 		}
 	}
 	dialer := webtransport.Dialer{
-		RoundTripper: &http3.RoundTripper{TLSClientConfig: tlsConf},
+		RoundTripper: &http3.RoundTripper{
+			TLSClientConfig: tlsConf,
+			QuicConfig:      t.quicConfig,
+		},
 	}
 	rsp, sess, err := dialer.Dial(ctx, url, nil)
 	if err != nil {
@@ -284,7 +299,7 @@ func (t *transport) Listen(laddr ma.Multiaddr) (tpt.Listener, error) {
 			return nil, t.listenOnceErr
 		}
 	}
-	return newListener(laddr, t, t.noise, t.certManager, t.staticTLSConf, t.gater, t.rcmgr)
+	return newListener(laddr, t, t.staticTLSConf)
 }
 
 func (t *transport) Protocols() []int {
@@ -301,6 +316,29 @@ func (t *transport) Close() error {
 		return t.certManager.Close()
 	}
 	return nil
+}
+
+func (t *transport) allowWindowIncrease(conn quic.Connection, size uint64) bool {
+	t.connMx.Lock()
+	defer t.connMx.Unlock()
+
+	c, ok := t.conns[conn.Context().Value(quic.ConnectionTracingKey).(uint64)]
+	if !ok {
+		return false
+	}
+	return c.allowWindowIncrease(size)
+}
+
+func (t *transport) addConn(sess *webtransport.Session, c *conn) {
+	t.connMx.Lock()
+	t.conns[sess.Context().Value(quic.ConnectionTracingKey).(uint64)] = c
+	t.connMx.Unlock()
+}
+
+func (t *transport) removeConn(sess *webtransport.Session) {
+	t.connMx.Lock()
+	delete(t.conns, sess.Context().Value(quic.ConnectionTracingKey).(uint64))
+	t.connMx.Unlock()
 }
 
 // extractSNI returns what the SNI should be for the given maddr. If there is an

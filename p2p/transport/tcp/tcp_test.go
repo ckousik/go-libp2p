@@ -86,7 +86,7 @@ func TestResourceManager(t *testing.T) {
 		scope := mocknetwork.NewMockConnManagementScope(ctrl)
 		rcmgr.EXPECT().OpenConnection(network.DirOutbound, true, ln.Multiaddr()).Return(scope, nil)
 		scope.EXPECT().SetPeer(peerA)
-		scope.EXPECT().PeerScope().Return(network.NullScope).AnyTimes() // called by the upgrader
+		scope.EXPECT().PeerScope().Return(&network.NullScope{}).AnyTimes() // called by the upgrader
 		conn, err := tb.Dial(context.Background(), ln.Multiaddr(), peerA)
 		require.NoError(t, err)
 		scope.EXPECT().Done()

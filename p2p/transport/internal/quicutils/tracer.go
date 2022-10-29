@@ -1,4 +1,4 @@
-package libp2pquic
+package quicutils
 
 import (
 	"bufio"
@@ -7,17 +7,21 @@ import (
 	"os"
 	"time"
 
+	golog "github.com/ipfs/go-log/v2"
 	"github.com/klauspost/compress/zstd"
-
 	"github.com/lucas-clemente/quic-go/logging"
 	"github.com/lucas-clemente/quic-go/qlog"
 )
 
-var qlogTracer logging.Tracer
+var log = golog.Logger("quic-utils")
+
+// QLOGTracer holds a qlog tracer, if qlogging is enabled (enabled using the QLOGDIR environment variable).
+// Otherwise it is nil.
+var QLOGTracer logging.Tracer
 
 func init() {
 	if qlogDir := os.Getenv("QLOGDIR"); len(qlogDir) > 0 {
-		qlogTracer = initQlogger(qlogDir)
+		QLOGTracer = initQlogger(qlogDir)
 	}
 }
 

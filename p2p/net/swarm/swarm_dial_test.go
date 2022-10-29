@@ -45,7 +45,7 @@ func TestAddrsForDial(t *testing.T) {
 	ps.AddPrivKey(id, priv)
 	t.Cleanup(func() { ps.Close() })
 
-	tpt, err := websocket.New(nil, network.NullResourceManager)
+	tpt, err := websocket.New(nil, &network.NullResourceManager{})
 	require.NoError(t, err)
 	s, err := NewSwarm(id, ps, WithMultiaddrResolver(resolver))
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func newTestSwarmWithResolver(t *testing.T, resolver *madns.Resolver) *Swarm {
 	})
 
 	// Add a tcp transport so that we know we can dial a tcp multiaddr and we don't filter it out.
-	tpt, err := tcp.NewTCPTransport(nil, network.NullResourceManager)
+	tpt, err := tcp.NewTCPTransport(nil, &network.NullResourceManager{})
 	require.NoError(t, err)
 	err = s.AddTransport(tpt)
 	require.NoError(t, err)

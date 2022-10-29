@@ -178,7 +178,7 @@ func NewSwarm(local peer.ID, peers peerstore.Peerstore, opts ...Option) (*Swarm,
 		}
 	}
 	if s.rcmgr == nil {
-		s.rcmgr = network.NullResourceManager
+		s.rcmgr = &network.NullResourceManager{}
 	}
 
 	s.dsync = newDialSync(s.dialWorkerLoop)

@@ -90,7 +90,7 @@ func New(secureMuxer sec.SecureMuxer, muxer network.Multiplexer, opts ...Option)
 		}
 	}
 	if u.rcmgr == nil {
-		u.rcmgr = network.NullResourceManager
+		u.rcmgr = &network.NullResourceManager{}
 	}
 	return u, nil
 }

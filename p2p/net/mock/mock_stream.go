@@ -287,7 +287,7 @@ func (s *stream) transport() {
 }
 
 func (s *stream) Scope() network.StreamScope {
-	return network.NullScope
+	return &network.NullScope{}
 }
 
 func (s *stream) cancelWrite(err error) {

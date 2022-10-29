@@ -1,4 +1,4 @@
-package libp2pquic
+package quicutils
 
 import (
 	"bytes"
