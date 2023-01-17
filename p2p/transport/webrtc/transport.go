@@ -402,13 +402,13 @@ func (t *WebRTCTransport) generateNoisePrologue(pc *webrtc.PeerConnection, hash 
 	if err != nil {
 		return nil, err
 	}
-	remoteFp = replaceAll(strings.ToLower(remoteFp), byte(':'))
+	remoteFp = removeAll(strings.ToLower(remoteFp), byte(':'))
 	remoteFpBytes, err := hex.DecodeString(remoteFp)
 	if err != nil {
 		return nil, err
 	}
 
-	local := replaceAll(localFp.Value, byte(':'))
+	local := removeAll(localFp.Value, byte(':'))
 	localBytes, err := hex.DecodeString(local)
 	if err != nil {
 		return nil, err

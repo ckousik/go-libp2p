@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -104,6 +105,8 @@ func newConnection(
 }
 
 func (c *connection) handleDataChannel(dc *webrtc.DataChannel) {
+	// TODO: Investigate why calling c.detachChannel from this function on `dc` causes
+	// onOpen to not run.
 	dc.OnOpen(func() {
 		rwc, err := dc.Detach()
 		if err != nil {
@@ -169,9 +172,17 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		return nil, os.ErrClosed
 	}
 
-	// id := uint16(atomic.AddUint32(&c.nextID, 2))
-	// dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: &id})
-	dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: nil})
+	// TODO: This is a fix for testing only. We should have a stream ID allocator
+	// with a way to reclaim freed stream ID's. This is required because stream opening
+	// fails with a DCEP error in Pion when the stream ID is not specified:
+	// https://github.com/pion/webrtc/issues/2258
+	// Conversely, when creating a large number of streams simultaneously, specifying
+	// the stream ID causes streams to be added at a quick rate causing the internal
+	// channel of the sctp association to fill up, thereby dropping incoming streams.
+	// This channel can hold 16 incoming streams to be accepted.
+	id := uint16(atomic.AddUint32(&c.nextID, 2))
+	dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: &id})
+	// dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: nil})
 	if err != nil {
 		return nil, err
 	}

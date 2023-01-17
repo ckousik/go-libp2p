@@ -49,6 +49,9 @@ const (
 	varintOverhead int = 2
 )
 
+// Using pbio.Writer concurrently is not safe since it could result in
+// different message becoming mixed. `protectedWriter` wraps the writer
+// to ensure only a single message is written at a time.
 type protectedWriter struct {
 	sync.Mutex
 	w pbio.Writer
@@ -201,6 +204,10 @@ func (d *webRTCStream) Read(b []byte) (int, error) {
 	}
 }
 
+// NOTE: The `Write` method on the datachannel ReadWriteCloser
+// is misleading since it does not return the number of bytes written
+// to the remote but the number of bytes queued for sending. We can know
+// how much data is in the queue using the `BufferedAmount` method.
 func (d *webRTCStream) Write(b []byte) (int, error) {
 	state := d.getState()
 	if !state.allowWrite() {
@@ -501,7 +508,6 @@ func (d *webRTCStream) isClosed() bool {
 		return false
 	}
 }
-
 
 // signal struct
 type signal struct {

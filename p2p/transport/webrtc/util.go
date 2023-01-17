@@ -115,8 +115,8 @@ func awaitPeerConnectionOpen(ufrag string, pc *webrtc.PeerConnection) <-chan err
 }
 
 // writeMessage writes a length-prefixed protobuf message to the datachannel. It
-// is preferred over protoio DelimitedWriter because it is thread safe, and the
-// buffer is only allocated from the global pool when writing.
+// is preferred over protoio DelimitedWriter because it is thread safe, and allocates
+// a smaller buffer
 func writeMessage(rwc datachannel.ReadWriteCloser, msg *pb.Message) (int, error) {
 	buf := make([]byte, 5)
 	varintLen := binary.PutUvarint(buf, uint64(proto.Size(msg)))

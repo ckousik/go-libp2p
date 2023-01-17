@@ -178,17 +178,17 @@ func (mux *udpMux) readLoop() {
 		}
 		buf = buf[:n]
 
-		mux.packetChan <- packet{ addr, buf }
+		mux.packetChan <- packet{addr, buf}
 
-// 		// a non-nil error signifies that the packet was not
-// 		// passed on to any connection, and therefore the current
-// 		// function has ownership of the packet. Otherwise, the
-// 		// ownership of the packet is passed to a connection
-// 		processErr := mux.processPacket(buf, addr)
-// 		if processErr != nil {
-// 			buf = buf[:cap(buf)]
-// 			pool.Put(buf)
-// 		}
+		// 		// a non-nil error signifies that the packet was not
+		// 		// passed on to any connection, and therefore the current
+		// 		// function has ownership of the packet. Otherwise, the
+		// 		// ownership of the packet is passed to a connection
+		// 		processErr := mux.processPacket(buf, addr)
+		// 		if processErr != nil {
+		// 			buf = buf[:cap(buf)]
+		// 			pool.Put(buf)
+		// 		}
 	}
 }
 

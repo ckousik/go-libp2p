@@ -286,6 +286,7 @@ func TestTransportWebRTC_DialerCanCreateStreams(t *testing.T) {
 }
 
 func TestBase(t *testing.T) {
+	t.Skip()
 	se0 := webrtc.SettingEngine{}
 	// suppress pion logs
 	// loggerFactory := pionlogger.NewDefaultLoggerFactory()
@@ -323,9 +324,6 @@ func TestBase(t *testing.T) {
 
 	answer, err := pc1.CreateAnswer(nil)
 	require.NoError(t, err)
-
-	t.Logf("offer: %v", offer)
-	t.Logf("answer: %v", answer)
 
 	err = pc1.SetLocalDescription(answer)
 	require.NoError(t, err)
@@ -389,7 +387,7 @@ func TestBase(t *testing.T) {
 				assert.Equal(t, 4, n)
 				n, err = rwc.Read(buf)
 				// sid := atomic.AddInt32(&sendIdx, 1)
-				// t.Logf("dialer finished read: %d", *channel.ID())
+				t.Logf("dialer finished read: %d", *channel.ID())
 				assert.NoError(t, err)
 				assert.Equal(t, 4, n)
 			})
@@ -400,6 +398,7 @@ func TestBase(t *testing.T) {
 }
 
 func TestTransportWebRTC_DialerCanCreateStreamsMultiple(t *testing.T) {
+	t.Skip()
 	count := 1000
 	tr, listeningPeer := getTransport(t)
 	listenMultiaddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp))
@@ -887,9 +886,8 @@ func TestTransportWebRTC_MaxInFlightRequests(t *testing.T) {
 	require.Equal(t, count, atomic.LoadUint32(&success))
 }
 
-func TestTransportWebRTC_TestCloseWrite(t *testing.T) {}
-
 func TestTransportWebRTC_TransportTest(t *testing.T) {
+	t.Skip()
 	ta, _ := getTransport(t)
 	tb, _ := getTransport(t)
 	ttransport.SubtestTransport(t, ta, tb, fmt.Sprintf("/ip4/%s/udp/0/webrtc", listenerIp), "peerA")

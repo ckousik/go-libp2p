@@ -20,7 +20,7 @@ func TestMaFingerprintToSdp(t *testing.T) {
 func TestReplaceAll(t *testing.T) {
 	fingerprint := "49:66:12:17:0D:1C:91:AE:57:4C:C6:36:DD:D5:97:D2:7D:62:C9:9A:7F:B9:A3:F4:70:03:E7:43:91:73:23:5E"
 	expected := "496612170D1C91AE574CC636DDD597D27D62C99A7FB9A3F47003E7439173235E"
-	result := replaceAll(fingerprint, byte(':'))
+	result := removeAll(fingerprint, byte(':'))
 	require.Equal(t, expected, result)
 }
 func TestIntersperse2(t *testing.T) {
@@ -129,7 +129,7 @@ func BenchmarkStringsReplaceAll(b *testing.B) {
 func BenchmarkReplaceAll(b *testing.B) {
 	fingerprint := "49:66:12:17:0D:1C:91:AE:57:4C:C6:36:DD:D5:97:D2:7D:62:C9:9A:7F:B9:A3:F4:70:03:E7:43:91:73:23:5E"
 	for i := 0; i < b.N; i++ {
-		replaceAll(fingerprint, byte(':'))
+		removeAll(fingerprint, byte(':'))
 	}
 }
 
