@@ -2,6 +2,7 @@ package udpmux
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,7 +14,12 @@ import (
 
 var _ net.PacketConn = &muxedConnection{}
 
-const maxPacketsInQueue int = 128
+const maxPacketsInQueue = 128
+
+var (
+	errTooManyPackets       = fmt.Errorf("too many packets in queue; dropping")
+	errAlreadyClosed  error = errors.New("already closed")
+)
 
 // muxedConnection provides a net.PacketConn abstraction
 // over packetQueue and adds the ability to store addresses
@@ -85,7 +91,7 @@ func (conn *muxedConnection) WriteTo(p []byte, addr net.Addr) (n int, err error)
 func (conn *muxedConnection) closeConnection() error {
 	select {
 	case <-conn.ctx.Done():
-		return fmt.Errorf("already closed")
+		return errAlreadyClosed
 	default:
 	}
 	conn.pq.close()
@@ -97,10 +103,6 @@ type packet struct {
 	addr net.Addr
 	buf  []byte
 }
-
-var (
-	errTooManyPackets = fmt.Errorf("too many packets in queue; dropping")
-)
 
 // just a convenience wrapper around a channel
 type packetQueue struct {

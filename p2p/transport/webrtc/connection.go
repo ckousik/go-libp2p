@@ -3,11 +3,9 @@ package libp2pwebrtc
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand"
 	"os"
 	"sync"
-	"sync/atomic"
 
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -22,7 +20,7 @@ import (
 var _ tpt.CapableConn = &connection{}
 
 const (
-	maxAcceptQueueLen = 10
+	maxAcceptQueueLen = 1000
 )
 
 type acceptStream struct {
@@ -49,14 +47,15 @@ type connection struct {
 	streams map[uint16]*webRTCStream
 
 	acceptQueue chan acceptStream
-	idAllocator *sidAllocator
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	nextID uint32
 }
 
 func newConnection(
-	direction network.Direction,
+	role webrtc.DTLSRole,
 	pc *webrtc.PeerConnection,
 	transport *WebRTCTransport,
 	scope network.ConnManagementScope,
@@ -71,13 +70,12 @@ func newConnection(
 ) (*connection, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
-	// this will be incremented before use
-	idAllocator, err := newSidAllocator(direction)
-	if err != nil {
-		cancel()
-		return nil, err
-	}
 
+	nextID := 0
+	if role == webrtc.DTLSRoleClient {
+		nextID++
+	}
+	acceptQueue := make(chan acceptStream, maxAcceptQueueLen)
 	conn := &connection{
 		dbgId:     rand.Intn(65536),
 		pc:        pc,
@@ -94,36 +92,34 @@ func newConnection(
 		ctx:             ctx,
 		cancel:          cancel,
 		streams:         make(map[uint16]*webRTCStream),
-		idAllocator:     idAllocator,
 
-		acceptQueue: make(chan acceptStream, maxAcceptQueueLen),
+		acceptQueue: acceptQueue,
+		nextID:      uint32(nextID),
 	}
 
 	pc.OnConnectionStateChange(conn.onConnectionStateChange)
-	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
-		if conn.IsClosed() {
-			return
-		}
-		// TODO: This seems to block on OnOpen if moved
-		// to a separate function.
-		dc.OnOpen(func() {
-			rwc, err := dc.Detach()
-			if err != nil {
-				log.Warnf("could not detach datachannel: id: %d", *dc.ID())
-				return
-			}
-			select {
-			case conn.acceptQueue <- acceptStream{rwc, dc}:
-			default:
-				log.Warnf("connection busy, rejecting stream")
-				// reject stream without instantiating a delimited writer
-				_, _ = writeMessage(rwc, &pb.Message{Flag: pb.Message_RESET.Enum()})
-				rwc.Close()
-			}
-		})
-	})
+	pc.OnDataChannel(conn.handleDataChannel)
 
 	return conn, nil
+}
+
+func (c *connection) handleDataChannel(dc *webrtc.DataChannel) {
+	dc.OnOpen(func() {
+		rwc, err := dc.Detach()
+		if err != nil {
+			log.Warnf("could not detach datachannel: id: %d", *dc.ID())
+			return
+		}
+		select {
+		case c.acceptQueue <- acceptStream{rwc, dc}:
+		default:
+			log.Warnf("connection busy, rejecting stream")
+			// reject stream without instantiating a delimited writer
+			_, _ = writeMessage(rwc, &pb.Message{Flag: pb.Message_RESET.Enum()})
+			rwc.Close()
+		}
+	})
+
 }
 
 func (c *connection) resetStreams() {
@@ -173,11 +169,9 @@ func (c *connection) OpenStream(ctx context.Context) (network.MuxedStream, error
 		return nil, os.ErrClosed
 	}
 
-	streamID, err := c.idAllocator.nextID()
-	if err != nil {
-		return nil, err
-	}
-	dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: streamID})
+	// id := uint16(atomic.AddUint32(&c.nextID, 2))
+	// dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: &id})
+	dc, err := c.pc.CreateDataChannel("", &webrtc.DataChannelInit{ID: nil})
 	if err != nil {
 		return nil, err
 	}
@@ -305,37 +299,4 @@ func (c *connection) setRemotePeer(id peer.ID) {
 // only used during connection setup
 func (c *connection) setRemotePublicKey(key ic.PubKey) {
 	c.remoteKey = key
-}
-
-// sidAllocator is a helper struct to allocate stream IDs for datachannels. ID
-// reuse is not currently implemented. This prevents streams in pion from hanging
-// with `invalid DCEP message` errors.
-// The id is picked using the scheme described in:
-// https://datatracker.ietf.org/doc/html/draft-ietf-rtcweb-data-channel-08#section-6.5
-// By definition, the DTLS role for inbound connections is set to DTLS Server,
-// and outbound connections are DTLS Client.
-type sidAllocator struct {
-	n uint32
-}
-
-func newSidAllocator(direction network.Direction) (*sidAllocator, error) {
-	switch direction {
-	case network.DirInbound:
-		// server will use odd values
-		return &sidAllocator{n: 1}, nil
-	case network.DirOutbound:
-		// client will use even values
-		return &sidAllocator{n: 0}, nil
-	default:
-		return nil, fmt.Errorf("could not create SID allocator for direction: %s", direction)
-	}
-}
-
-func (a *sidAllocator) nextID() (*uint16, error) {
-	nxt := atomic.AddUint32(&a.n, 2)
-	if nxt > math.MaxUint16 {
-		return nil, fmt.Errorf("sid exhausted")
-	}
-	result := uint16(nxt)
-	return &result, nil
 }

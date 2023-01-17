@@ -22,7 +22,7 @@ import (
 	"github.com/multiformats/go-multihash"
 
 	"github.com/pion/ice/v2"
-	pionlogger "github.com/pion/logging"
+	// pionlogger "github.com/pion/logging"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -203,15 +203,14 @@ func (l *listener) setupConnection(ctx context.Context, scope network.ConnManage
 	settingEngine := webrtc.SettingEngine{}
 
 	// suppress pion logs
-	loggerFactory := pionlogger.NewDefaultLoggerFactory()
-	loggerFactory.DefaultLogLevel = pionlogger.LogLevelDisabled
-	settingEngine.LoggerFactory = loggerFactory
+	// loggerFactory := pionlogger.NewDefaultLoggerFactory()
+	// loggerFactory.DefaultLogLevel = pionlogger.LogLevelDisabled
+	// settingEngine.LoggerFactory = loggerFactory
 
 	settingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	settingEngine.SetICECredentials(addr.ufrag, addr.ufrag)
 	settingEngine.SetLite(true)
 	settingEngine.SetICEUDPMux(l.mux)
-	settingEngine.SetIncludeLoopbackCandidate(true)
 	settingEngine.DisableCertificateFingerprintVerification(true)
 	settingEngine.SetICETimeouts(l.transport.peerConnectionDisconnectedTimeout, l.transport.peerConnectionFailedTimeout, l.transport.peerConnectionKeepaliveTimeout)
 	settingEngine.DetachDataChannels()
@@ -269,7 +268,7 @@ func (l *listener) setupConnection(ctx context.Context, scope network.ConnManage
 	// to handle the case where the remote is faster and attempts to initiate a stream
 	// before the ondatachannel callback can be set.
 	conn, err := newConnection(
-		network.DirInbound,
+		webrtc.DTLSRoleServer,
 		pc,
 		l.transport,
 		scope,
@@ -286,6 +285,7 @@ func (l *listener) setupConnection(ctx context.Context, scope network.ConnManage
 
 	// we do not yet know A's peer ID so accept any inbound
 	secureConn, err := l.transport.noiseHandshake(ctx, pc, handshakeChannel, "", crypto.SHA256, true)
+	handshakeChannel.Close()
 	if err != nil {
 		return pc, nil, err
 	}

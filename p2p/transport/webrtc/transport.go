@@ -29,7 +29,8 @@ import (
 	mafmt "github.com/multiformats/go-multiaddr-fmt"
 	manet "github.com/multiformats/go-multiaddr/net"
 	"github.com/multiformats/go-multihash"
-	pionlogger "github.com/pion/logging"
+
+	// pionlogger "github.com/pion/logging"
 
 	"github.com/pion/dtls/v2/pkg/crypto/fingerprint"
 	"github.com/pion/webrtc/v3"
@@ -274,14 +275,12 @@ func (t *WebRTCTransport) dial(
 
 	settingEngine := webrtc.SettingEngine{}
 	// suppress pion logs
-	loggerFactory := pionlogger.NewDefaultLoggerFactory()
-	loggerFactory.DefaultLogLevel = pionlogger.LogLevelDisabled
-	settingEngine.LoggerFactory = loggerFactory
+	// loggerFactory := pionlogger.NewDefaultLoggerFactory()
+	// loggerFactory.DefaultLogLevel = pionlogger.LogLevelDisabled
+	// settingEngine.LoggerFactory = loggerFactory
 
 	settingEngine.SetICECredentials(ufrag, ufrag)
 	settingEngine.DetachDataChannels()
-	settingEngine.SetAnsweringDTLSRole(webrtc.DTLSRoleClient)
-	settingEngine.SetIncludeLoopbackCandidate(true)
 	settingEngine.SetICETimeouts(t.peerConnectionDisconnectedTimeout, t.peerConnectionFailedTimeout, t.peerConnectionKeepaliveTimeout)
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
@@ -355,7 +354,7 @@ func (t *WebRTCTransport) dial(
 	// we can only know the remote public key after the noise handshake,
 	// but need to set up the callbacks on the peerconnection
 	conn, err := newConnection(
-		network.DirOutbound,
+		webrtc.DTLSRoleClient,
 		pc,
 		t,
 		scope,
@@ -371,6 +370,7 @@ func (t *WebRTCTransport) dial(
 	}
 
 	secConn, err := t.noiseHandshake(ctx, pc, channel, p, remoteHashFunction, false)
+	channel.Close()
 	if err != nil {
 		return pc, conn, err
 	}

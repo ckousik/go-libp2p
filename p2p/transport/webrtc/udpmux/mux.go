@@ -2,6 +2,7 @@ package udpmux
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -45,9 +46,11 @@ type udpMux struct {
 	socket               net.PacketConn
 	unknownUfragCallback func(string, net.Addr)
 
-	m        sync.Mutex
+	m        sync.RWMutex
 	ufragMap map[ufragConnKey]*muxedConnection
 	addrMap  map[string]*muxedConnection
+
+	packetChan chan packet
 
 	// the context controls the lifecycle of the mux
 	wg     sync.WaitGroup
@@ -64,6 +67,7 @@ func NewUDPMux(socket net.PacketConn, unknownUfragCallback func(string, net.Addr
 		unknownUfragCallback: unknownUfragCallback,
 		ufragMap:             make(map[ufragConnKey]*muxedConnection),
 		addrMap:              make(map[string]*muxedConnection),
+		packetChan:           make(chan packet, 2000),
 	}
 
 	mux.wg.Add(1)
@@ -84,6 +88,9 @@ func (mux *udpMux) GetListenAddresses() []net.Addr {
 // and peer-reflexive addresses).
 func (mux *udpMux) GetConn(ufrag string, addr net.Addr) (net.PacketConn, error) {
 	a, ok := addr.(*net.UDPAddr)
+	if !ok {
+		return nil, errors.New("not a udp addr")
+	}
 	isIPv6 := ok && a.IP.To4() == nil
 	return mux.getOrCreateConn(ufrag, isIPv6)
 }
@@ -148,6 +155,9 @@ func (mux *udpMux) writeTo(buf []byte, addr net.Addr) (int, error) {
 
 func (mux *udpMux) readLoop() {
 	defer mux.wg.Done()
+	for i := 0; i < 10; i++ {
+		go mux.worker()
+	}
 	for {
 		select {
 		case <-mux.ctx.Done():
@@ -168,15 +178,17 @@ func (mux *udpMux) readLoop() {
 		}
 		buf = buf[:n]
 
-		// a non-nil error signifies that the packet was not
-		// passed on to any connection, and therefore the current
-		// function has ownership of the packet. Otherwise, the
-		// ownership of the packet is passed to a connection
-		processErr := mux.processPacket(buf, addr)
-		if processErr != nil {
-			buf = buf[:cap(buf)]
-			pool.Put(buf)
-		}
+		mux.packetChan <- packet{ addr, buf }
+
+// 		// a non-nil error signifies that the packet was not
+// 		// passed on to any connection, and therefore the current
+// 		// function has ownership of the packet. Otherwise, the
+// 		// ownership of the packet is passed to a connection
+// 		processErr := mux.processPacket(buf, addr)
+// 		if processErr != nil {
+// 			buf = buf[:cap(buf)]
+// 			pool.Put(buf)
+// 		}
 	}
 }
 
@@ -191,9 +203,9 @@ func (mux *udpMux) processPacket(buf []byte, addr net.Addr) error {
 	// check if the remote address has a connection associated
 	// with it. If yes, we push the received packet to the connection
 	// and loop again.
-	mux.m.Lock()
+	mux.m.RLock()
 	conn, ok := mux.addrMap[udpAddr.String()]
-	mux.m.Unlock()
+	mux.m.RUnlock()
 	// if address was not found check if ufrag exists
 	if !ok && stun.IsMessage(buf) {
 		msg := &stun.Message{Raw: buf}
@@ -228,12 +240,33 @@ func (mux *udpMux) processPacket(buf []byte, addr net.Addr) error {
 	if conn != nil {
 		err := conn.push(buf, addr)
 		if err != nil {
-			log.Error("could not push packet")
+			log.Errorf("could not push packet: %v", err)
 		}
 		return nil
 	}
 
 	return fmt.Errorf("connection not found")
+}
+
+func (mux *udpMux) worker() {
+	// check for mux closure
+	for {
+		select {
+		case <-mux.ctx.Done():
+			return
+		case pkt, ok := <-mux.packetChan:
+			if !ok {
+				continue
+			}
+			processErr := mux.processPacket(pkt.buf, pkt.addr)
+			if processErr != nil {
+				pkt.buf = pkt.buf[:cap(pkt.buf)]
+				pool.Put(pkt.buf)
+			}
+		}
+
+	}
+
 }
 
 // ufragFromStunMessage returns the local or ufrag

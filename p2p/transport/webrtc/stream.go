@@ -135,6 +135,10 @@ func newStream(
 func (d *webRTCStream) Read(b []byte) (int, error) {
 	for {
 		if d.isClosed() {
+			closeErr := d.getCloseErr()
+			if closeErr != nil {
+				return 0, closeErr
+			}
 			return 0, io.ErrClosedPipe
 		}
 		d.m.Lock()
@@ -148,7 +152,7 @@ func (d *webRTCStream) Read(b []byte) (int, error) {
 		remaining := len(d.readBuf)
 		d.m.Unlock()
 
-		if state := d.getState(); remaining == 0 && (state == stateReadClosed || state == stateClosed) {
+		if remaining == 0 && !d.getState().allowRead() {
 			closeErr := d.getCloseErr()
 			log.Debugf("[2] stream closed or empty: closeErr: %v", closeErr)
 			if closeErr != nil {
@@ -259,7 +263,7 @@ func (d *webRTCStream) partialWrite(b []byte) (int, error) {
 	timeout := make(chan struct{})
 	var deadlineTimer *time.Timer
 	for {
-		if state := d.getState(); !state.allowWrite() {
+		if !d.getState().allowWrite() {
 			return 0, io.ErrClosedPipe
 		}
 		// prepare waiting for writeAvailable signal
@@ -297,6 +301,7 @@ func (d *webRTCStream) partialWrite(b []byte) (int, error) {
 				}
 				return len(b), nil
 			case <-d.ctx.Done():
+				log.Debugf("closed pipe")
 				return 0, io.ErrClosedPipe
 			case <-deadlineUpdated:
 
@@ -436,7 +441,7 @@ func (d *webRTCStream) close(isReset bool, notifyConnection bool) error {
 	}
 	var err error
 	d.closeOnce.Do(func() {
-		log.Debug("closing: reset: %v, notify: %v", isReset, notifyConnection)
+		log.Warnf("closing: reset: %v, notify: %v", isReset, notifyConnection)
 		d.m.Lock()
 		d.state = stateClosed
 		if d.closeErr == nil {
@@ -483,7 +488,7 @@ func (d *webRTCStream) processIncomingFlag(flag pb.Message_Flag) {
 	d.m.Unlock()
 
 	if current != next && next == stateClosed {
-		log.Debug("closing: received flag: %v", flag)
+		log.Warnf("closing: received flag: %v", flag)
 		defer d.close(flag == pb.Message_RESET, true)
 	}
 }
@@ -497,6 +502,8 @@ func (d *webRTCStream) isClosed() bool {
 	}
 }
 
+
+// signal struct
 type signal struct {
 	sync.Mutex
 	c chan struct{}
